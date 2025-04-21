@@ -4,6 +4,6 @@ Creating a popular game we play on paper and running Deep learning /ML algorithm
 
 **NOTE** Not completed yet, the game is still playable, 
 ```bash
-gcc DotGame.c
+gcc dotgame.c
 ./a.out
 ```
