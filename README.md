@@ -8,4 +8,4 @@ Creating a popular game we play on paper and running Deep learning /ML algorithm
 gcc dotgame.c
 ./a.out
 ```
-![](Screenshot from 2025-06-21 18-18-54.png)
+![](Screenshot-from-2025-06-21-18-18-54.png)
