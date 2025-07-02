@@ -10,17 +10,31 @@ parser.add_argument("--games", type=int, default=1, help="Number of games to pla
 parser.add_argument("--secs",type=int,default=1,help="How many seconds agent should think before move(for mcts and alphazero)")
 
 args = parser.parse_args()
-if args.agent1 == 'alphazero' or args.agent2 == 'alphazero':
+if args.agent1 == 'alphazero':
+  from agents.alphazero import Play as play1
+if args.agent1 == 'mcts':
+  from agents.mcts import Play as play1
+if args.agent1 == 'dqn':
+  from agents.dqn import Play as play1
+if args.agent1 == 'qt':
+  from agents.tabular_q import Play as play1
+if args.agent1 == 'minmax':
+   from agents.minmax import Play as play1
+if not args.agent1=="self":
+  player1 = play1()
+
+if args.agent2 == 'alphazero':
   from agents.alphazero import Play
-if args.agent1 == 'mcts' or args.agent2 == 'mcts':
+if args.agent2 == 'mcts':
   from agents.mcts import Play
-if args.agent1 == 'dqn' or args.agent2 == 'dqn':
+if args.agent2 == 'dqn':
   from agents.dqn import Play
-if args.agent1 == 'qt' or args.agent2 == 'qt':
+if args.agent2 == 'qt':
   from agents.tabular_q import Play
-if args.agent1 == 'minmax' or args.agent2 == 'minmax':
+if args.agent2 == 'minmax':
    from agents.minmax import Play
-player = Play()
+if not args.agent2=="self":
+  player2 = Play()
 plotter = Plot()
 # You now have:
 # args.agent1  → e.g., "alphazero", "minmax", or path to a saved model
@@ -38,21 +52,24 @@ for game in range(args.games):
     value = 0
     while(not env.gameover()):
         if turn == 1:
-            if args.agent1 != "self":
-                action = player.play(env,turn,args.secs)
+            if not args.agent1 == "self":
+                action = player1.play(env,turn,args.secs)
             else : 
-                action = input("enter the number where you want to put the line")
+                while(action not in env.action_space()):
+                  action = int(input("enter the number where you want to put the line"))
         else:
-            if args.agent1 != "self":
-                action = player.play(env,turn,args.secs)
+            if not args.agent2 == "self":
+                action = player2.play(env,turn,args.secs)
             else : 
-                action = input("enter the number where you want to put the line")
+                while(action not in env.action_space()):
+                  action = int(input("enter the number where you want to put the line"))
 
         reward = float(env.step(action,turn))
         if args.games < 3 or args.agent1 == "self" or args.agent2 == "self":
             env.render()
         if(reward == 0):
             turn = -turn
+        action = float('inf')
     value = sum(env.boxes)
     if value > 0:
        wins +=1
@@ -62,5 +79,6 @@ for game in range(args.games):
        draws += 1
 
 print(f"agent1 wins {wins} agent2 wins {loss} draws {draws}")
-plotter.plot(args.agent1,args.agent2,wins,draws,loss,args.dots)
-print('plot saved in DotGame/plots/')
+if not (args.agent1 == "self" or args.agent2 == "self"):
+  plotter.plot(args.agent1,args.agent2,wins,draws,loss,args.dots)
+  print('plot saved in DotGame/plots/')
