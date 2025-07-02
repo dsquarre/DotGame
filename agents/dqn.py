@@ -3,7 +3,7 @@
 import random
 import torch
 import torch.nn as nn
-from ..env.env import Env
+from env.env import Env
 class NN(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
@@ -94,7 +94,10 @@ class Play:
       output_dim = len(env.grid)
       device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
       model = NN(input_dim, output_dim).to(torch.device(device))
-      model.load_state_dict(torch.load(f"trained_models/dqn{dots}.pth", map_location=torch.device(device)))
+      try:
+        model.load_state_dict(torch.load(f"trained_models/dqn{dots}.pth", map_location=torch.device(device)))
+      except FileNotFoundError:
+          print("Please train the model first, playing randomnly now")
       state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
       with torch.no_grad():
         q_values = model(state_tensor).squeeze()

@@ -113,8 +113,8 @@ class Env:
       return actions
     
     @classmethod
-    def from_state(cls, state):
-        env = cls(dots=4) 
+    def from_state(cls,dots, state):
+        env = cls(dots) 
         g_len = len(env.grid)
         b_len = len(env.boxes)
         env.grid = list(state[:g_len])
@@ -122,8 +122,8 @@ class Env:
         env.turn = state[-1]
         return env
     @classmethod
-    def Gameover(cls, state):
-        env = cls(dots=4) 
+    def Gameover(cls,dots, state):
+        env = cls(dots) 
         g_len = len(env.grid)
         b_len = len(env.boxes)
         env.grid = list(state[:g_len])

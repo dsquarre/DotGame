@@ -2,7 +2,7 @@ import random
 from collections import defaultdict
 import numpy as np
 import pickle
-from ..env.env import Env
+from env.env import Env
 class qt:
     def train(self,dots,epochs):
         env = Env(dots)
@@ -61,8 +61,12 @@ class qt:
 class Play:
    def play(self,env,turn,secs=0):
         dots = env.dots
-        with open(f"trained_models/Q{dots}.pkl","r") as f:
-            Q = defaultdict(lambda: np.zeros(len(env.grid)), pickle.load(f))
+        Q = defaultdict(lambda: np.zeros(len(env.grid)))
+        try:
+            with open(f"trained_models/Q{dots}.pkl","r") as f:
+                Q = defaultdict(lambda: np.zeros(len(env.grid)), pickle.load(f))
+        except FileNotFoundError:
+            print("Please train the model first, playing randomnly now")
         state = tuple(env.grid + env.boxes + [turn])
         valid_actions = env.action_space()
         valid_q_values = [Q[state][a] for a in valid_actions]

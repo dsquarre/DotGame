@@ -2,13 +2,12 @@ import torch
 import torch.optim as optim
 import numpy as np
 import torch.nn as nn
-import torch.nn as nn
 import math
 import random
 import time
 from collections import deque
 
-from ..env.env import Env
+from env.env import Env
 class NN(nn.Module):  # Inherit properly
   def __init__(self, input_dim,output_dim):
         super(NN, self).__init__()  # Correct super call
@@ -40,13 +39,13 @@ class Node:
     
 
   def is_expanded(self):
-    return (len(self.children) == len(Env.from_state(self.state).action_space()))
+    return (len(self.children) == len(Env.from_state(self.dots,self.state).action_space()))
 
   def expand(self):
     child_turn = self.state[-1]
-    for action in Env.from_state(self.state).action_space():
+    for action in Env.from_state(self.dots,self.state).action_space():
       self.visits[action] = 0
-      new_env = Env.from_state(self.state)
+      new_env = Env.from_state(self.dots,self.state)
       reward = new_env.step(action,child_turn)
       new_turn = 0
       if reward == 0:
@@ -81,7 +80,7 @@ class Node:
       else:
         Q_s_a = self.value[action]
         utility[action] = Q_s_a + c_param*policy[action]*math.sqrt(self.total_visits)/(1+self.visits[action])
-    valid_actions = Env.from_state(self.state).action_space()
+    valid_actions = Env.from_state(self.dots,self.state).action_space()
     best = random.choice(valid_actions)
     #print(utility)
     turn = self.state[-1]
@@ -120,7 +119,7 @@ class alphazero:
       if node:
         node.value[node.action] += reward
         reward=discount
-        valid_actions = Env.from_state(node.state).action_space()
+        valid_actions = Env.from_state(self.dots,node.state).action_space()
         for action in valid_actions:
           z = sum((node.visits).values())
           if z == 0 :
@@ -140,12 +139,12 @@ class alphazero:
       # Selection
       while node.children and node.is_expanded():
           node = node.best_child(model,training)
-          if Env.Gameover(node.state):
+          if Env.Gameover(self.dots,node.state):
               break
 
       # Terminal node
-      if Env.Gameover(node.state):
-          reward = sum(Env.from_state(node.state).boxes)
+      if Env.Gameover(self.dots,node.state):
+          reward = sum(Env.from_state(self.dots,node.state).boxes)
           value = 1 if reward > 0 else -1 if reward < 0 else 0
           self.backpropagate(node, value)
           continue
@@ -220,13 +219,13 @@ class alphazero:
     while(end_time - start_time < secs):
       node = root
       #reward = node.total_reward
-      gameover = Env.Gameover(node.state)
+      gameover = Env.Gameover(self.dots,node.state)
       while not gameover:
         while node.children:
           #print(len(node.children))
           child = node.best_child(model,training=False)
           node = child
-          gameover = Env.Gameover(node.state)
+          gameover = Env.Gameover(self.dots,node.state)
 
         if gameover:
           break
@@ -234,7 +233,7 @@ class alphazero:
         if not node.children:
           node.expand()
 
-      total_reward = sum(Env.from_state(node.state).boxes)
+      total_reward = sum(Env.from_state(self.dots,node.state).boxes)
       reward = 0
       if total_reward > 0:
         reward = 1
@@ -258,8 +257,12 @@ class Play:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = NN(input_dim,output_dim).to(device)   
     #optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    checkpoint = torch.load(f"trained_models/alphazero{dots}.pt", map_location=torch.device(device))
-    model.load_state_dict(checkpoint['model_state_dict'])
+    try:
+      checkpoint = torch.load(f"trained_models/alphazero{dots}.pt", map_location=torch.device(device))
+      model.load_state_dict(checkpoint['model_state_dict'])
+    except FileNotFoundError:
+      print("Please train the model first, playing randomnly now")
+    
     state = tuple(env.grid + env.boxes + [turn],turn)
     livenode = Node(dots,state,turn)
     thinker = alphazero()
