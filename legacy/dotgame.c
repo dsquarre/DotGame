@@ -22,9 +22,9 @@ void main(){
 	fprintf(f,"%d\n%d\n%d",1,0,0);
 	fclose(f);*/
 	//take board size = 5
-	//printf("Enter dots in one side > ");
+	printf("Enter dots in one side > ");
 	int gridsize = 5;
-	//scanf("%d",&gridsize);
+	scanf("%d",&gridsize);
 	int totalmoves = 2*(gridsize - 1)*gridsize;
 	int grid[totalmoves];
 	
@@ -56,7 +56,7 @@ void main(){
 		if(grid[move]) break;
 		printf("Already Filled Position");
 		}
-		printf("\e[H\e[2J\e[3J"); //clear screen
+		//printf("\e[H\e[2J\e[3J"); //clear screen
 		//move = computermove(totalmoves,grid,gridsize);
 		grid[move] = 0;
 		
@@ -70,7 +70,6 @@ void main(){
 		//printf("%d",box.b);
 		if(turn == 'C'){
 		turn = 'P';
-		//random for now
 		move = computermove(totalmoves, grid, gridsize);
 		//printf("%d",move);
 		grid[move] = 0;
@@ -83,13 +82,16 @@ void main(){
 		}
 	}
 	//end of program
-	/*int eval;
+	//this was for interpolation 
+	/*
+	int eval;
 	if(playerboxes>computerboxes){eval = 1;}
 	else if(playerboxes<computerboxes){eval = -1;}
 	else{ eval = 0;}
 	//since game is over and last move is stored
 	int n;
-	f = fopen("values.txt","r");
+	printf("storing the game sequence and value in values.txt");
+	f = fopen("legacy/values.txt","r");
 	fscanf(f,"%d",&n);
 	int x[n]; int y[n];
 	for(int i = 0;i<n;i++){
@@ -104,8 +106,8 @@ void main(){
 		fprintf(f,"%d\n%d\n",x[i],y[i]);
 	}
 	fprintf(f,"%d\n%d",move,eval/move);
-	fclose(f);*/
-	//main();	
+	fclose(f);
+	//main();	*/
 }
 
 // move = rows(gridsize-1) + col(gridsize) + x
@@ -253,7 +255,8 @@ int gameover(int totalmoves, int* grid, int playerboxes, int computerboxes){
 	return over;
 }
 
-/*	
+//trying a function approximator using polynomial interpolation, didnt work sadly. Too frustrated to check
+// same thing can be achieved faster and more efficiently using nn, so shifting to python Q Learning
 int possiblemove(int totalmoves, int* grid){
 	int i = 0;
 	while(grid[i] == 0){
@@ -334,5 +337,4 @@ int computermove(int totalmoves, int* grid, int myboxes, int oppboxes){
 	}
 	return best;
 }
-*/
 
