@@ -10,7 +10,7 @@ class qt:
         Q = defaultdict(lambda: np.zeros(len(env.grid)))
         discount_factor = 0.7
         learning_rate = 0.1
-        epochs  = 1000000
+        #epochs  = 1000000
         for episode in range(epochs+1):
             turn = random.choice([1,-1])
             state = tuple(env.grid + env.boxes + [turn])
@@ -52,11 +52,12 @@ class qt:
                 #print(best_q_next)
                 
             env.reset()
-            if(episode%50000 == 0):
-                print(f"no of q values stored: {len(Q)} episodes : {episode}")
+            if(episode%1000 == 0):
+                print(f"no of q values stored: {len(Q)} ,episodes : {episode}")
 
         with open(f"trained_models/Q{dots}.pkl", "wb") as f:
             pickle.dump(dict(Q),f)
+        #print(Q)
         print(f"training finished, model stored in trained_models/Q{dots}.pkl")
         
 class Play:

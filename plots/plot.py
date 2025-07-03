@@ -36,5 +36,5 @@ class Plot:
         autolabel(rects3)
 
         plt.tight_layout()
-        plt.savefig(f"plots/{dots}x{dots}{player2}vs{player1}.png")
+        plt.savefig(f"plots/{dots}x{dots}{player1}vs{player2}.png")
         plt.show()
