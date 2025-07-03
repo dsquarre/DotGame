@@ -7,7 +7,7 @@ parser.add_argument("--dots",type=int,default=4,help="no. of dots in game")
 parser.add_argument("--agent1", type=str, required=True, help="alphazero,minmax,mcts,dqn,qt,self")
 parser.add_argument("--agent2", type=str, required=True, help="alphazero,minmax,mcts,dqn,qt,self")
 parser.add_argument("--games", type=int, default=1, help="Number of games to play")
-parser.add_argument("--secs",type=int,default=1,help="How many seconds agent should think before move(for mcts and alphazero)")
+parser.add_argument("--sims",type=int,default=1,help="How many simulations agent should do before move(for mcts and alphazero)")
 
 args = parser.parse_args()
 if args.agent1 == 'alphazero':
@@ -50,26 +50,27 @@ for game in range(args.games):
     env.reset()
     turn = 1
     value = 0
+    action = -9
     while(not env.gameover()):
         if turn == 1:
             if not args.agent1 == "self":
-                action = player1.play(env,turn,args.secs)
+                action = player1.play(env,turn,args.sims)
             else : 
                 while(action not in env.action_space()):
-                  action = int(input("enter the number where you want to put the line"))
+                  action = int(input("enter the number where you want to put the line > "))
         else:
             if not args.agent2 == "self":
-                action = player2.play(env,turn,args.secs)
+                action = player2.play(env,turn,args.sims)
             else : 
                 while(action not in env.action_space()):
-                  action = int(input("enter the number where you want to put the line"))
+                  action = int(input("enter the number where you want to put the line > "))
 
         reward = float(env.step(action,turn))
         if args.games < 3 or args.agent1 == "self" or args.agent2 == "self":
             env.render()
         if(reward == 0):
             turn = -turn
-        action = float('inf')
+        action = -9
     value = sum(env.boxes)
     if value > 0:
        wins +=1

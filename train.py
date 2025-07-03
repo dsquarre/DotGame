@@ -8,16 +8,16 @@ parser.add_argument("--agent", type=str, required=True, help="alphazero,mcts,dqn
 parser.add_argument("--epochs", type=int, default=100, help="Number of epochs for training")
 
 args = parser.parse_args()
-if args.agent1 == 'alphazero':
+if args.agent == 'alphazero':
   from agents.alphazero import alphazero
   trainer = alphazero()
-if args.agent1 == 'mcts':
+if args.agent == 'mcts':
   from agents.mcts import mcts
   trainer = mcts()
-if args.agent1 == 'dqn' :
+if args.agent == 'dqn' :
   from agents.dqn import dqn
   trainer = dqn()
-if args.agent1 == 'qt':
+if args.agent == 'qt':
   from agents.tabular_q import qt
   trainer = qt()
 

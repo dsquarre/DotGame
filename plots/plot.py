@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class Plot:    
-    def plot(self,player1,player2,wins,loss,draws,dots=4):            
+    def plot(self,player1,player2,wins,draws,loss,dots):            
         
         #labels = [player1]
         #x = np.arange(len(labels))  # label locations
