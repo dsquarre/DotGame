@@ -5,8 +5,9 @@ import torch.nn as nn
 import math
 import random
 import time
-from collections import deque
 from env.env import Env
+from collections import deque
+
 #from env.env import Env
 class NN(nn.Module):  # Inherit properly
   def __init__(self, input_dim,output_dim):
@@ -68,7 +69,7 @@ class Node:
     grid = 2 *self.dots*(self.dots-1)
     if training == True:
       alpha = 0.3
-      epsilon = 0.3
+      epsilon = 0.25
       noise = np.random.dirichlet([alpha] * grid)
       for i in range(grid):
         policy[i] = (1 - epsilon) * policy[i] + epsilon * noise[i]
@@ -76,9 +77,9 @@ class Node:
     utility = [0]*(grid)
     for action in range(grid):
       if action not in self.N.keys():
-        utility[action] = self.state[-1]*0.005 if training else 0
+        utility[action] = self.state[-1]*0.005
       else:
-        Q_s_a = self.W[action]/(self.N[action]+0.1)
+        Q_s_a = self.W[action]/(self.N[action]+1e-8)
         U_s_a = c_param*policy[action]*math.sqrt(self.total_visits)/(1+self.N[action])
         utility[action] = Q_s_a + U_s_a
     valid_actions = Env.from_state(self.dots,self.state).action_space()
@@ -150,7 +151,7 @@ class alphazero:
     node = root
     #print(f"recieved this {node.state}")
     #self.show(node)
-    threshold = 100
+    threshold = 2*dots*(dots-1)
     movecount = 0
     for _ in range(simulations):
       #print(f"simulation {_}")
@@ -159,7 +160,7 @@ class alphazero:
       # Selection
       t = 1 if movecount < 5 else 0.1
       while node.children and node.is_expanded():
-          min_visits = float('inf')
+          min_visits = 2*dots*(dots-1)
           min_action = -9
           for action in list(node.children.keys()):
             if node.children[action].total_visits < min_visits:
@@ -211,7 +212,9 @@ class alphazero:
 
     model = NN(input_dim,output_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
-
+    checkpoint = torch.load("alphazero4_checkpoint_epoch_2000.pt")
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     for episode in range(epochs):
       #print(episode)
       if episode < 1000:
@@ -227,8 +230,10 @@ class alphazero:
         torch.save({
               'model_state_dict': model.state_dict(),
               'optimizer_state_dict': optimizer.state_dict(),
-          }, f"trained_models/alphazero{dots}_checkpoint_epoch_{episode}.pt")
-        
+          }, f"alphazero{dots}_checkpoint_epoch_{episode}.pt")
+        from google.colab import files
+        files.download(f'alphazero{dots}_checkpoint_epoch_{episode}.pt')
+
       #play n games to collect training data for nn
       root = Node(dots,state)
       self.mcts(dots=dots,root=root,simulations=n,model=model)
@@ -248,20 +253,22 @@ class alphazero:
       total_loss = policy_loss + value_loss
       #print(f"policy requires grad: {pred_policies.requires_grad}")
       #print(f"value requires grad: {pred_values.requires_grad}")
-
+      for name, param in model.named_parameters():
+        if param.grad is not None and param.grad.isnan().any():
+          print(f"NaN in gradients: {name}")
       optimizer.zero_grad()
       total_loss.backward()
       optimizer.step()
       if (episode %100 == 0):
         policy_probs_batch = torch.softmax(pred_policies, dim=1)
         print(f"Episode {episode}: Loss = {total_loss.item():.4f}")
-        entropy = - (policy_probs_batch * policy_probs_batch.log()).sum(dim=1).mean().item()
+        entropy = - (policy_probs_batch * (policy_probs_batch+1e-8).log()).sum(dim=1).mean().item()
         print(f"Policy entropy: {entropy:.4f}")
     print("training done")
     torch.save({
               'model_state_dict': model.state_dict(),
               'optimizer_state_dict': optimizer.state_dict(),
-          }, f"trained_models/alphazero{dots}.pt")
+          }, f"alphazero{dots}.pt")
     #saving optimizer for continuous training
     print(f"Model saved at alphazero{dots}.pt")
 
