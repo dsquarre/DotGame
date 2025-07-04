@@ -212,9 +212,7 @@ class alphazero:
 
     model = NN(input_dim,output_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
-    checkpoint = torch.load("alphazero4_checkpoint_epoch_2000.pt")
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
     for episode in range(epochs):
       #print(episode)
       if episode < 1000:
