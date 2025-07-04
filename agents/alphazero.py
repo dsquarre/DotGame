@@ -5,9 +5,8 @@ import torch.nn as nn
 import math
 import random
 import time
-from env.env import Env
 from collections import deque
-
+from env.env import Env
 #from env.env import Env
 class NN(nn.Module):  # Inherit properly
   def __init__(self, input_dim,output_dim):
@@ -59,7 +58,7 @@ class Node:
       child = Node(self.dots,state,parent=self,action=action)
       self.children[action]=child
 
-  def best_child(self,model,c_param=1.2,training=True):
+  def best_child(self,model,c_param=1.2,training=True,show=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy,_ = model(torch.tensor(self.state, dtype=torch.float32, device=device).unsqueeze(0))
     policy = policy.squeeze(0)
@@ -77,13 +76,14 @@ class Node:
     utility = [0]*(grid)
     for action in range(grid):
       if action not in self.N.keys():
-        utility[action] = self.state[-1]*0.005
+        utility[action] = None
       else:
         Q_s_a = self.W[action]/(self.N[action]+1e-8)
         U_s_a = c_param*policy[action]*math.sqrt(self.total_visits)/(1+self.N[action])
         utility[action] = Q_s_a + U_s_a
     valid_actions = Env.from_state(self.dots,self.state).action_space()
     best = random.choice(valid_actions)
+    if show: print(f"U(s,a) : {utility}")
     #print(utility)
     turn = self.state[-1]
     if turn == 1:
@@ -151,16 +151,18 @@ class alphazero:
     node = root
     #print(f"recieved this {node.state}")
     #self.show(node)
-    threshold = 2*dots*(dots-1)
+    threshold = 100
     movecount = 0
-    for _ in range(simulations):
+    i=0
+    while(i < simulations):
       #print(f"simulation {_}")
       #print(f"current tree ")
       #self.show(node)
       # Selection
       t = 1 if movecount < 5 else 0.1
       while node.children and node.is_expanded():
-          min_visits = 2*dots*(dots-1)
+          threshold = min(math.factorial(len(node.children)),100)
+          min_visits = 500
           min_action = -9
           for action in list(node.children.keys()):
             if node.children[action].total_visits < min_visits:
@@ -197,7 +199,9 @@ class alphazero:
       value = predicted_value.item()
       #print(f"backpropagating this {node.state} {value}")
       node = self.backpropagate(node, value,t)
-
+      i+=1
+    print(i)
+    
       #print(f"got this {node.state}")
     #print(f"returning this {node.state}")
     #self.show(node)
@@ -212,7 +216,6 @@ class alphazero:
 
     model = NN(input_dim,output_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
-    
     for episode in range(epochs):
       #print(episode)
       if episode < 1000:
@@ -257,7 +260,7 @@ class alphazero:
       optimizer.zero_grad()
       total_loss.backward()
       optimizer.step()
-      if (episode %100 == 0):
+      if (episode %10 == 0):
         policy_probs_batch = torch.softmax(pred_policies, dim=1)
         print(f"Episode {episode}: Loss = {total_loss.item():.4f}")
         entropy = - (policy_probs_batch * (policy_probs_batch+1e-8).log()).sum(dim=1).mean().item()
@@ -272,7 +275,7 @@ class alphazero:
 
 
 class Play:
-  def play(self,env,turn,sims=5000):
+  def play(self,env,turn,sims=10000):
     dots = env.dots
     state = tuple(env.grid + env.boxes+[1])
     input_dim = len(state)
@@ -281,8 +284,9 @@ class Play:
     model = NN(input_dim,output_dim).to(device)
     #optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     try:
-      checkpoint = torch.load(f"alphazero{dots}.pt", map_location=torch.device(device))
+      checkpoint = torch.load(f"alphazero{dots}.pt")
       model.load_state_dict(checkpoint['model_state_dict'])
+
     except FileNotFoundError:
       print("Please train the model first, playing randomnly now")
 
@@ -290,9 +294,11 @@ class Play:
     livenode = Node(dots,state)
     bot = alphazero()
     livenode = bot.mcts(dots,livenode,sims,model,False)
-    for i in livenode.N.keys():
-      print(f"action {i} total reward: {livenode.W[i]/(livenode.N[i]+0.1)}")
-    action = livenode.best_child(model,False)
-    print(f"choosing action {action}")
+
+    #policy,value= model(torch.tensor(livenode.state, dtype=torch.float32, device=device).unsqueeze(0))
+    #print(f"model predicited policy = {policy} \nvalue = {value}")
+    action = livenode.best_child(model,False,show=False)
+
+    #print(f"choosing action {action}")
     #bot.show(livenode)
     return action

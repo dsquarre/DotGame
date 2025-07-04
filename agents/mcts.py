@@ -5,7 +5,7 @@ import pickle
 import random
 from env.env import Env
 class Play:
-  def play(self,env,turn,sims=5):
+  def play(self,env,turn,sims=1000000):
     #print('recieved this')
     dots = env.dots
     state = tuple(env.grid + env.boxes + [turn])
@@ -28,7 +28,7 @@ class Play:
       print("Train model, playing online now")
     #livenode.expand()
     #print(len(livenode.children))
-    action = thinker.think(env.dots,livenode,positions,sims)
+    action = thinker.think(dots=env.dots,root=livenode,positions=positions,simulations=sims)
     #print(len(livenode.children))
     return action
   
@@ -65,22 +65,23 @@ class Node:
       self.children[action] = new_node
       positions[new_state] = new_node
 
-  def best_child(self,c_param=1.4,thinking=True):
-    excepted_reward = {}
+  def best_child(self,c_param=1.4,thinking=True,show=False):
+    expected_reward = {}
     env = Env.from_state(self.dots,self.state)
     #print(len(env.action_space()))
     for action in env.action_space():
-      if thinking:
-        excepted_reward[action] = self.children[action].total_reward/(self.children[action].visits+1e-8) + c_param*math.sqrt(math.log(self.visits + 1))/(self.children[action].visits +1e-8)
-      else:
-        excepted_reward[action] = self.children[action].total_reward/self.children[action].visits
+      if thinking: expected_reward[action] = self.children[action].total_reward/(self.children[action].visits+1e-8) + c_param*math.sqrt(math.log(self.visits + 1))/(self.children[action].visits +1e-8)
+      else: expected_reward[action] = self.children[action].total_reward/(self.children[action].visits+0.1)
+    if show: 
+      print(f"{self.visits}")
+      print(f"expected reward :  {expected_reward}")
     reward = 0
     if self.turn == 1:
-      reward = max(excepted_reward.values())
+      reward = max(expected_reward.values())
     elif self.turn == -1:
-      reward =  min(excepted_reward.values())
-    for key in excepted_reward:
-      if reward == excepted_reward[key]:
+      reward =  min(expected_reward.values())
+    for key in expected_reward:
+      if reward == expected_reward[key]:
         return key
     return None
 
@@ -96,16 +97,12 @@ class mcts:
     #print("received this")
     #env.render()
     while not env.gameover():
-      epsilon = 0.8
-      if random.random() > epsilon:
-        action = random.choice(env.action_space())
-      else:
-        action = greedy.play(env,turn)
+      action = greedy.play(env,turn)
       value = env.step(action,turn)
       if value == 0:
         turn *=-1
     boxes = sum(env.boxes)
-    #print(f"epsilon greedy value {boxes}")
+    #print(f"greedy value {boxes}")
     #env.render()
     if boxes > 0: return 1
     elif boxes <0: return -1
@@ -116,7 +113,7 @@ class mcts:
     while(node):
       node.visits += 1
       node.total_reward += reward
-      reward *= discount
+      #reward *= discount
       if not node.parent:
         break
       node = node.parent
@@ -129,12 +126,13 @@ class mcts:
     positions = {}
     positions[state] = node
     #node = self.root
-    threshold = 100
+    threshold = 2000
     for i in range(simulations):
       gameover = Env.Gameover(dots,node.state)
       while not gameover:
         while node.children:
-          min_visits = 100
+          threshold = 700
+          min_visits = 700
           min_action = -9
           for action in list(node.children.keys()):
             if node.children[action].visits < min_visits:
@@ -161,11 +159,11 @@ class mcts:
         #print(f"reward backpropagated {value}")
         #self.show(node)
 
-      total_reward = sum(Env.from_state(dots,node.state).boxes)
+      boxes = sum(Env.from_state(dots,node.state).boxes)
       reward = 0
-      if total_reward > 0:
+      if boxes > 0:
         reward = 1 
-      elif total_reward < 0:
+      elif boxes < 0:
         reward = -1 
       else :
         reward = 0
@@ -177,70 +175,72 @@ class mcts:
   def think(self,dots,root,positions,simulations):
     node = root
     node.parent = None
-    #print(f"recieved {node.state}")
-    threshold = 100
-    start_time = time.time()
-    for i in range(simulations):
-      print(i)
+    i = 0
+    threshold = 2000
+    while(i < simulations):
+      #print(f"recieved {node.state}")
+      #print(i)
       gameover = Env.Gameover(dots,node.state)
-      while not gameover:
-        while node.children:
-          
-          min_visits = 101
-          min_action = -9
-          for action in list(node.children.keys()):
-            if node.children[action].visits < min_visits:
-              min_visits = node.children[action].visits
-              min_action = action
-          if min_visits < threshold:
-            action = min_action
-          else:
-            action = node.best_child()
-          print(f"choosing best child {action}")
-          node = node.children[action]
-          gameover = Env.Gameover(dots,node.state)
-          if gameover:
-            break
-
-        if gameover:
-          break
-
+      #print(f"episode {i} children {len(root.children)}")
+      while node.children:
+        if (2*dots*(dots-1)) -len(root.children) > 3:
+          threshold = 7000
+           
+        else : 
+          threshold = 100
+          i+=500
+        min_visits = 100000
+        min_action = -1
+        for action in list(node.children.keys()):
+          if node.children[action].visits < min_visits:
+            min_visits = node.children[action].visits
+            min_action = action
+        if min_visits < threshold:
+          action = min_action
+        else:
+          action = node.best_child()
+        #print(f"choosing best child {action}")
+        node = node.children[action]
+        gameover = Env.Gameover(dots,node.state)
+        
+      reward = 0
+      if not gameover:
         node.expand(positions)
         child = random.choice(list(node.children.values()))
-        value = self.simulate(child)
+        reward = self.simulate(child)
         node = child
-        node = self.backpropagate(node,value)
-        print(f"expanding and reward backpropagated {value}")
+        #node = self.backpropagate(node,value)
+        #print(f"expanding and reward backpropagated {value}")
         #self.show(node)
-
-      total_reward = sum(Env.from_state(dots,node.state).boxes)
-      reward = 0
-      if total_reward > 0:
-        reward = 1 
-      elif total_reward < 0:
-        reward = -1 
-      else :
-        reward = 0
+      else : 
+        boxes = sum(Env.from_state(dots,node.state).boxes)
+        if boxes > 0:
+          reward = 1 
+        elif boxes < 0:
+          reward = -1 
+        else :
+          reward = 0
+     
       node = self.backpropagate(node, reward)
-      end_time = time.time()
-    t = end_time-start_time
-    print(f'time {t}')
+      i+=1
+    #print(i)    
+    #print(f'time {t}')
     for action in node.children.keys():
-        print(f"action {action} value: {node.children[action].total_reward/node.children[action].visits}") 
+      print(f"action {action} value: {node.children[action].total_reward} visits : {node.children[action].visits}") 
 
-    action =  node.best_child(thinking=False) 
-    print(f"expected reward {node.children[action].total_reward/node.children[action].visits}") 
+    action =  node.best_child(thinking=False,show=True) 
+    #print(f"expected reward {node.children[action].total_reward/node.children[action].visits}") 
     #print(node.state)
-    #self.show(node.children[action])  
+    self.show(node.children[action])  
     return action
   
   def show(self, node, depth=0):
       indent = "  " * depth
-      print(f"{indent}Node state: {node.state}, visits: {node.visits}, total reward: {node.total_reward:.2f}")
+      print(f"{indent}Node state: {node.state}, visits: {node.visits}, total reward: {node.total_reward}")
 
       for action, child in node.children.items():
           expected_reward = child.total_reward / (child.visits + 1e-8)
-          print(f"{indent}├── Action {action} → visits: {child.visits}, total reward: {child.total_reward:.2f}, expected reward: {expected_reward:.4f}")
+          print(f"{indent}├── Action {action} → visits: {child.visits}, total reward: {child.total_reward}, expected reward: {expected_reward:.4f}")
           self.show(child, depth + 1)  # recursive call for the child node
 
       if not node.children:
