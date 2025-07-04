@@ -21,16 +21,15 @@ Agents are modular and located in `agents/`:
 ## Directory Structure
 
 DotGame/<br/>
-├── agents/<br/># All agent implementations<br/>
-├── env/<br/># DotGame environment<br/>
-├── notebook/<br/># Colabs file<br/>
-├── legacy/<br/># Old C implementation<br/>
-├── trained_models/<br># Saved model files<br/>
-├── plots/<br/># Plots saved here after play<br/>
-├── train.py<br/># Main training entry point<br/>
-├── play.py<br/># Main evaluation entry point<br/>
-└── requirements.txt<br/># Libraries used<br/> 
-└── README.md<br/># This file<br/>
+├── agents/ # All agent implementations<br/>
+├── env/ DotGame environment<br/>
+├── legacy/ # Old C implementation<br/>
+├── trained_models/ # Saved model files<br/>
+├── plots/ # Plots saved here after play<br/>
+├── train.py # Main training entry point<br/>
+├── play.py # Main evaluation entry point<br/>
+└── requirements.txt # Libraries used<br/> 
+└── README.md # This file<br/>
 
 
 ---
