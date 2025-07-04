@@ -2,7 +2,11 @@
 
 Creating a popular game we play on paper and creating agents to play it perfectly.
 
+![](dotgame.png)
+
+
 ---
+
 
 ## 🧠 Agents Implemented
 
@@ -70,4 +74,3 @@ gcc dotgame.c
 ./a.out
 ```
 
-![](dotgame.png)
