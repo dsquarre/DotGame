@@ -6,7 +6,7 @@ import math
 import random
 import time
 from collections import deque
-from env.env import Env
+
 #from env.env import Env
 class NN(nn.Module):  # Inherit properly
   def __init__(self, input_dim,output_dim):
@@ -60,8 +60,8 @@ class Node:
 
   def best_child(self,model,c_param=1.2,training=True,show=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    policy,_ = model(torch.tensor(self.state, dtype=torch.float32, device=device).unsqueeze(0))
-    policy = policy.squeeze(0)
+    pred_policy,_ = model(torch.tensor(self.state, dtype=torch.float32, device=device).unsqueeze(0))
+    policy = torch.softmax(pred_policy,dim=1).squeeze(0)
     policy = policy.tolist()
     #print(policy)
     #policy = policy.detach()
@@ -76,7 +76,7 @@ class Node:
     utility = [0]*(grid)
     for action in range(grid):
       if action not in self.N.keys():
-        utility[action] = None
+        utility[action] = c_param*policy[action]
       else:
         Q_s_a = self.W[action]/(self.N[action]+1e-8)
         U_s_a = c_param*policy[action]*math.sqrt(self.total_visits)/(1+self.N[action])
@@ -108,7 +108,7 @@ class Node:
 
 class alphazero:
   def __init__(self):
-    self.replay_buffer = deque(maxlen=100000)
+    self.replay_buffer = deque(maxlen=1000000)
 
 
   def backpropagate(self,node,reward,t=0.5,discount=1):
@@ -121,12 +121,20 @@ class alphazero:
       node.total_visits += 1
       reward *=discount
       valid_actions = Env.from_state(node.dots,node.state).action_space()
-      for action in valid_actions:
-        z = node.total_visits
-        if z == 0 :
-          policy[action] = 0 #aggressively explore unexplored actions
-        else:
-          policy[action] = node.N[action]**(1/t) / (z**(1/t))
+      numerator = []
+      for i in range(2 * node.dots * (node.dots - 1)):
+          if i in valid_actions:
+              if node.N[i] == 0:
+                  numerator.append(1.0)  # Encourage unexplored actions
+              else:
+                  numerator.append(node.N[i] ** (1 / t))
+          else:
+              numerator.append(0.0)
+
+      denominator = sum(numerator)
+      policy = [x / denominator if i in valid_actions else 0.0
+                for i, x in enumerate(numerator)]
+
       self.replay_buffer.append((node.state, policy, reward))
       if not node.parent:
         break
@@ -151,7 +159,7 @@ class alphazero:
     node = root
     #print(f"recieved this {node.state}")
     #self.show(node)
-    threshold = 100
+    threshold = 1000 if training else 200
     movecount = 0
     i=0
     while(i < simulations):
@@ -159,10 +167,9 @@ class alphazero:
       #print(f"current tree ")
       #self.show(node)
       # Selection
-      t = 1 if movecount < 5 else 0.1
+      t = 1 if movecount < 4 else 0.5
       while node.children and node.is_expanded():
-          threshold = min(math.factorial(len(node.children)),100)
-          min_visits = 500
+          min_visits = 1000
           min_action = -9
           for action in list(node.children.keys()):
             if node.children[action].total_visits < min_visits:
@@ -186,6 +193,7 @@ class alphazero:
           #print(f"backpropagating this {node.state} {value}")
           node = self.backpropagate(node, value,t)
           movecount = 0
+          i+=1
           #print(f"got this {node.state}")
           continue
 
@@ -200,49 +208,75 @@ class alphazero:
       #print(f"backpropagating this {node.state} {value}")
       node = self.backpropagate(node, value,t)
       i+=1
-    print(i)
+    #print(i)
     
       #print(f"got this {node.state}")
     #print(f"returning this {node.state}")
     #self.show(node)
     return node
 
-  def train(self,dots,epochs=2,n=1000):
+  def train(self,dots,epochs,n):
     env = Env(dots)
     state = tuple(env.grid + env.boxes+[1])
     input_dim = len(state)
     output_dim = len(env.grid)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    root = Node(dots,state)
     model = NN(input_dim,output_dim).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
     for episode in range(epochs):
       #print(episode)
-      if episode < 1000:
+      if episode < 100:
         lr = 0.1
-      elif episode < 2000:
+      elif episode < 200:
         lr = 0.02
-      elif episode < 3000:
+      elif episode < 300:
         lr = 0.002
       for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-      if episode % 500 == 0 and not episode == 0:
+      if episode % 100 == 0 and not episode == 0:
         print(f"{episode} episodes done, saving checkpoint in trained_models/")
         torch.save({
               'model_state_dict': model.state_dict(),
               'optimizer_state_dict': optimizer.state_dict(),
-          }, f"alphazero{dots}_checkpoint_epoch_{episode}.pt")
+          }, f"alphazero{dots}.pt")
         from google.colab import files
-        files.download(f'alphazero{dots}_checkpoint_epoch_{episode}.pt')
+        files.download(f'alphazero{dots}.pt')
+        greedy = Minmax()
+        #bot.train(dots=3,epochs=500,n=10000)
+        bot = Play()
+        env = Env(dots)
+        turn = 1
+        win = 0
+        loss = 0
+        draw = 0
+        for _ in range(10):
+          while not env.gameover():
+            if turn == 1:
+              action = bot.play(env,turn)
+            else:
+              action = greedy.play(env,turn)
+            v = env.step(action,turn)
+            #env.render()
+            if v == 0:
+              turn = -turn
+          if sum(env.boxes) > 0: win+=1
+          elif sum(env.boxes) <0: loss+=1
+          else: draw += 1
+          env.reset()
+          turn = 1
+        plotter = Plot()
+        plotter.plot("alphazero","minmax",win,draw,loss,3,title=f"epoch {episode}")
+        
 
       #play n games to collect training data for nn
-      root = Node(dots,state)
-      self.mcts(dots=dots,root=root,simulations=n,model=model)
-      while(len(self.replay_buffer) < 10000):
-          self.mcts(dots=dots,root=root,simulations=n,model=model)
+      
+      root = self.mcts(dots=dots,root=root,simulations=n,model=model)
+      while(len(self.replay_buffer) < 50000):
+          root = self.mcts(dots=dots,root=root,simulations=n,model=model)
         #print("simulations done")
       #take random sample games for training
-      batch = random.sample(self.replay_buffer, k=10000)
+      batch = random.sample(self.replay_buffer, k=50000)
       X = torch.tensor([s for (s, _, _) in batch], dtype=torch.float32, device=device)
       Y_policy = torch.tensor([p for (_, p, _) in batch], dtype=torch.float32, device=device)
       Y_value = torch.tensor([v for (_, _, v) in batch], dtype=torch.float32, device=device)
@@ -271,6 +305,7 @@ class alphazero:
               'optimizer_state_dict': optimizer.state_dict(),
           }, f"alphazero{dots}.pt")
     #saving optimizer for continuous training
+    print("DONE")
     print(f"Model saved at alphazero{dots}.pt")
 
 
@@ -286,19 +321,21 @@ class Play:
     try:
       checkpoint = torch.load(f"alphazero{dots}.pt")
       model.load_state_dict(checkpoint['model_state_dict'])
-
+      print("model loaded")
     except FileNotFoundError:
       print("Please train the model first, playing randomnly now")
 
     state = tuple(env.grid + env.boxes + [turn])
     livenode = Node(dots,state)
     bot = alphazero()
-    livenode = bot.mcts(dots,livenode,sims,model,False)
+    #livenode = bot.mcts(dots,livenode,sims,model,False)
 
-    #policy,value= model(torch.tensor(livenode.state, dtype=torch.float32, device=device).unsqueeze(0))
+    logits,value= model(torch.tensor(livenode.state, dtype=torch.float32, device=device).unsqueeze(0))
+    policy = torch.softmax(logits,dim=1)
     #print(f"model predicited policy = {policy} \nvalue = {value}")
     action = livenode.best_child(model,False,show=False)
 
     #print(f"choosing action {action}")
     #bot.show(livenode)
     return action
+

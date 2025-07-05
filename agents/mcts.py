@@ -131,8 +131,8 @@ class mcts:
       gameover = Env.Gameover(dots,node.state)
       while not gameover:
         while node.children:
-          threshold = 700
-          min_visits = 700
+          threshold = 1000
+          min_visits = 1000
           min_action = -9
           for action in list(node.children.keys()):
             if node.children[action].visits < min_visits:
