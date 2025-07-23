@@ -5,8 +5,10 @@ import torch.nn as nn
 import math
 import random
 import time
+from env.env import Env
 from collections import deque
-
+from plots.plot import Plot
+from agents.minmax import Minmax
 #from env.env import Env
 class NN(nn.Module):  # Inherit properly
   def __init__(self, input_dim,output_dim):

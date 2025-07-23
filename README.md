@@ -32,7 +32,7 @@ DotGame/<br/>
 ├── plots/ #Plots saved here after play<br/>
 ├── train.py #Main training entry point<br/>
 ├── play.py #Main evaluation entry point<br/>
-└── requirements.txt #Libraries used<br/> 
+├── requirements.txt #Libraries used<br/> 
 └── README.md #This file<br/>
 
 
