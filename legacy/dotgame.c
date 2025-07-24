@@ -290,16 +290,7 @@ double evaluate(int state){
 	fclose(f);
 	
 	double eval = 0.00;
-	if(state = -1){ //too large number
-		for(int i = 0; i<n; i++){
-			double l = 1.00;
-			for(int j = 0; j<n; j++){
-				l *= (double)1.00/(double)(x[i]-x[j]);
-			}
-			eval += l*y[i];
-		}
-	}
-	else{ //number close to end
+	
 		for(int i = 0; i<n; i++){
 			double l = 1.00;
 			for(int j = 0; j<n; j++){
@@ -310,12 +301,12 @@ double evaluate(int state){
 		for(int i = 0;i<n-1;i++){
 			eval = eval/state;
 		}
-	}
+	
 	return eval;
 }
 
 
-int computermove(int totalmoves, int* grid, int myboxes, int oppboxes){
+int bot(int totalmoves, int* grid, int myboxes, int oppboxes){
 	double eval = myboxes - oppboxes + evaluate(makestate(totalmoves,grid));
 	int tempgrid[totalmoves];
 	for(int i = 0; i<totalmoves; i++){
