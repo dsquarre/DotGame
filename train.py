@@ -1,24 +1,161 @@
-from env.env import Env
-from plots.plot import Plot
+import os
 import argparse
+import random
+import json
+import numpy as np
+import elo
+import env.gameenv as gameenv
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dots",type=int,default=4,help="no. of dots in game")
-parser.add_argument("--agent", type=str, required=True, help="alphazero,mcts,dqn,qt")
-parser.add_argument("--epochs", type=int, default=100, help="Number of epochs for training")
+parser.add_argument("--h", type=int, default=4, help="no. of horizontal dots in game")
+parser.add_argument("--v", type=int, default=4, help="no. of vertical dots in game")
+parser.add_argument("--a", type=str, required=True, help="alphazero,mcts,dqn,qt")
+parser.add_argument("--e", type=int, default=100, help="Number of epochs for training")
+parser.add_argument("--eval_games", type=int, default=30, help="Number of games to play during each evaluation interval")
+parser.add_argument("--eval_interval", type=int, default=50, help="Number of training epochs between evaluations")
 
 args = parser.parse_args()
-if args.agent == 'alphazero':
-  from agents.alphazero import alphazero
-  trainer = alphazero()
-if args.agent == 'mcts':
-  from agents.mcts import mcts
-  trainer = mcts()
-if args.agent == 'dqn' :
-  from agents.dqn import dqn
-  trainer = dqn()
-if args.agent == 'qt':
-  from agents.tabular_q import qt
-  trainer = qt()
 
-trainer.train(args.dots,args.epochs)
+if args.a == 'alphazero':
+    from agents.alphazero import alphazero
+    trainer = alphazero()
+if args.a == 'mcts':
+    from agents.mcts import mcts
+    trainer = mcts()
+if args.a == 'dqn':
+    from agents.dqn import dqn
+    trainer = dqn()
+if args.a == 'qt':
+    from agents.tabular_q import qt
+    trainer = qt()
+
+def run_eval_games(agent_player, agent_name, h, v, count=100, agent=None):
+    """Runs evaluation games between the target agent and Minmax."""
+    from agents.minmax import Play as Play_Minmax
+    minmax = Play_Minmax(h, v)
+    for i in range(count):
+        if i % 2 == 0:
+            p1, p2 = agent_player, minmax
+            p1_name, p2_name = agent_name, "minmax"
+        else:
+            p1, p2 = minmax, agent_player
+            p1_name, p2_name = "minmax", agent_name
+            
+        state = gameenv.get_initial_state((h, v))
+        turn = 1
+        while not gameenv.is_gameover(state):
+            if turn == 1:
+                action = p1.play(state, turn, 0.01)
+            else:
+                action = p2.play(state, turn, 0.01)
+            state, reward = gameenv.step(state, action)
+            turn = 1 if state[-1][0][0][0] > 0 else -1
+            
+        p1_boxes = np.sum(state[-1][3])
+        p2_boxes = np.sum(state[-1][4])
+        if p1_boxes > p2_boxes:
+            outcome = 1.0
+        elif p2_boxes > p1_boxes:
+            outcome = 0.0
+        else:
+            outcome = 0.5
+        elo.log_match(p1_name, p2_name, outcome, h, v, agent=agent)
+
+if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
+    ratings = elo._load_ratings(args.h, args.v, agent=args.a)
+    
+    # Initialize epoch 0 ratings history
+    if args.a not in ratings:
+        ratings[args.a] = {
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+            "rating": 100.0,
+            "rating_history": [100.0],
+            "epoch_history": {"0": 100.0}
+        }
+    if "minmax" not in ratings:
+        ratings["minmax"] = {
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+            "rating": 100.0,
+            "rating_history": [100.0],
+            "epoch_history": {"0": 100.0}
+        }
+    elo._save_ratings(ratings, args.h, args.v, agent=args.a)
+        
+    total_epochs = args.e
+    interval = args.eval_interval
+    
+    agent_ratings_history = ratings.get(args.a, {})
+    epoch_history = agent_ratings_history.get("epoch_history", {})
+    
+    start_epoch = interval
+    if epoch_history:
+        epoch_keys = [int(k) for k in epoch_history.keys() if int(k) > 0]
+        if epoch_keys:
+            start_epoch = max(epoch_keys) + interval
+        
+    for epochs_so_far in range(start_epoch, start_epoch + total_epochs, interval):
+        print(f"\n--- Training {args.a} Epochs {epochs_so_far - interval + 1} to {epochs_so_far} ---")
+        trainer.train(args.h, args.v, interval, start_epoch=epochs_so_far - interval + 1)
+        
+        if args.a == 'qt':
+            from agents.tabular_q import Play as AgentPlayer
+        elif args.a == 'dqn':
+            from agents.dqn import Play as AgentPlayer
+        elif args.a == 'mcts':
+            from agents.mcts import Play as AgentPlayer
+        elif args.a == 'alphazero':
+            from agents.alphazero import Play as AgentPlayer
+            
+        agent_player = AgentPlayer(args.h, args.v)
+        
+        print(f"Playing {args.eval_games} evaluation games against Minmax...")
+        run_eval_games(agent_player, args.a, args.h, args.v, count=args.eval_games, agent=args.a)
+        
+        ratings = elo._load_ratings(args.h, args.v, agent=args.a)
+        current_elo = ratings.get(args.a, {}).get("rating", 100.0)
+        
+        # Log evaluation results for this epoch
+        ratings[args.a]["epoch_history"][str(epochs_so_far)] = current_elo
+        if "minmax" in ratings:
+            ratings["minmax"]["epoch_history"][str(epochs_so_far)] = ratings["minmax"]["rating"]
+            
+        elo._save_ratings(ratings, args.h, args.v, agent=args.a)
+        print(f"Epoch {epochs_so_far} - ELO rating of {args.a}: {current_elo:.2f}")
+        
+        ratings = elo._load_ratings(args.h, args.v, agent=args.a)
+        plt.figure(figsize=(10, 6))
+        for agent_name in ['dqn', 'qt', 'mcts', 'alphazero', 'minmax']:
+            if agent_name in ratings and "epoch_history" in ratings[agent_name]:
+                hist = ratings[agent_name]["epoch_history"]
+                sorted_keys = sorted([int(k) for k in hist.keys()])
+                sorted_vals = [hist[str(k)] for k in sorted_keys]
+                if agent_name == 'dqn':
+                    label, color = 'DQN (2D CNN)', 'blue'
+                elif agent_name == 'qt':
+                    label, color = 'Tabular Q', 'green'
+                elif agent_name == 'mcts':
+                    label, color = 'MCTS', 'purple'
+                elif agent_name == 'alphazero':
+                    label, color = 'AlphaZero', 'orange'
+                else:
+                    label, color = 'Minmax Benchmark', 'red'
+                plt.plot(sorted_keys, sorted_vals, marker='o', label=label, color=color)
+                
+        plt.xlabel('Training Epochs')
+        plt.ylabel('ELO Rating')
+        plt.title(f'Agent ELO Progression ({args.h}x{args.v} board)')
+        plt.grid(True)
+        plt.legend()
+        os.makedirs("plots", exist_ok=True)
+        plt.savefig(f"plots/elo_learning_curve_{args.h}x{args.v}_{args.a}.png")
+        plt.close()
+        
+    print(f"\nTraining and ELO evaluation loop complete!")
+    print(f"Learning curve saved to plots/elo_learning_curve_{args.h}x{args.v}_{args.a}.png")
+else:
+    trainer.train(args.h, args.v, args.e)

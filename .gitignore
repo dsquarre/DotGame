@@ -1,5 +1,10 @@
 .env
 __pycache__
-*.png
 *.pt
+*.pth
 *.pkl
+*.json
+*.csv
+*.c
+*.so
+build/
