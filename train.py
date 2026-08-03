@@ -310,7 +310,7 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
                 pass
 
         # Plot fixed benchmark lines
-        plt.axhline(y=1000, color='red', linestyle='--', linewidth=2, label='Minmax Benchmark (Fixed 1000)')
+        plt.axhline(y=1000, color='red', linestyle='--', linewidth=2, label='Minmax (0.02s) (Fixed 1000)')
         if args.h == 3 and args.v == 3:
             plt.axhline(y=1250, color='black', linestyle=':', linewidth=2, label='Perfect Solver (Fixed 1250)')
         
