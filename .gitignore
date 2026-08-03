@@ -1,8 +1,8 @@
 .env
 __pycache__
-*.pt
-*.pth
-*.pkl
+#*.pt
+#*.pth
+#*.pkl
 *.json
 *.csv
 *.c
