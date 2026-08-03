@@ -4,8 +4,8 @@ import math
 
 def _get_filenames(h, v, agent=None):
     if agent:
-        return f"elo_ratings_{h}x{v}_{agent}.json", f"match_history_{h}x{v}_{agent}.csv"
-    return f"elo_ratings_{h}x{v}.json", f"match_history_{h}x{v}.csv"
+        return f"elo_ratings_{h-1}x{v-1}_{agent}.json", f"match_history_{h-1}x{v-1}_{agent}.csv"
+    return f"elo_ratings_{h-1}x{v-1}.json", f"match_history_{h-1}x{v-1}.csv"
 
 def _load_ratings(h, v, agent=None):
     """Loads player ratings from the JSON database file."""

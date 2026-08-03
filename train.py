@@ -8,14 +8,16 @@ import env.gameenv as gameenv
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--h", type=int, default=4, help="no. of horizontal dots in game")
-parser.add_argument("--v", type=int, default=4, help="no. of vertical dots in game")
+parser.add_argument("--h", type=int, default=3, help="no. of horizontal boxes in game")
+parser.add_argument("--v", type=int, default=3, help="no. of vertical boxes in game")
 parser.add_argument("--a", type=str, required=True, choices=["alphazero", "mcts", "dqn", "qt"], help="alphazero,mcts,dqn,qt")
 parser.add_argument("--e", type=int, default=100, help="Number of epochs for training")
 parser.add_argument("--eval_games", type=int, default=100, help="Number of games to play during each evaluation interval")
 parser.add_argument("--eval_interval", type=int, default=50, help="Number of training epochs between evaluations")
 
 args = parser.parse_args()
+h_dots = args.h + 1
+v_dots = args.v + 1
 
 if args.a == 'alphazero':
     from agents.alphazero import az
@@ -94,7 +96,7 @@ def run_eval_games(agent_player, agent_name, h, v, count=100, agent=None):
     print(f"  Overall: Agent wins {agent_wins}, Losses {agent_losses}, Draws {draws} (Win Rate: {win_rate:.2%})")
 
 if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
-    ratings = elo._load_ratings(args.h, args.v, agent=args.a)
+    ratings = elo._load_ratings(h_dots, v_dots, agent=args.a)
     
     # Initialize epoch 0 ratings history
     if args.a not in ratings:
@@ -115,7 +117,7 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
             "rating_history": [1000.0],
             "epoch_history": {"0": 1000.0}
         }
-    elo._save_ratings(ratings, args.h, args.v, agent=args.a)
+    elo._save_ratings(ratings, h_dots, v_dots, agent=args.a)
         
     total_epochs = args.e
     interval = args.eval_interval
@@ -132,12 +134,13 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
     for epochs_so_far in range(start_epoch, start_epoch + total_epochs, interval):
         # Ensure we always resume from the current champion checkpoint to prevent value drift
         import shutil
+        grid_str = f"{args.h}x{args.v}"
         if args.a == 'dqn':
-            src = f"trained_models/dqn{args.h}x{args.v}.pth"
-            dst = f"trained_models/dqn{args.h}x{args.v}_best.pth"
+            src = f"trained_models/dqn{grid_str}.pth"
+            dst = f"trained_models/dqn{grid_str}_best.pth"
         elif args.a == 'alphazero':
-            src = f"trained_models/alphazero{args.h}x{args.v}.pt"
-            dst = f"trained_models/alphazero{args.h}x{args.v}_best.pt"
+            src = f"trained_models/alphazero{grid_str}.pt"
+            dst = f"trained_models/alphazero{grid_str}_best.pt"
         else:
             src, dst = None, None
             
@@ -146,7 +149,7 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
             shutil.copy(dst, src)
 
         print(f"\n--- Training {args.a} Epochs {epochs_so_far - interval + 1} to {epochs_so_far} ---")
-        trainer.train(args.h, args.v, interval, start_epoch=epochs_so_far - interval + 1)
+        trainer.train(h_dots, v_dots, interval, start_epoch=epochs_so_far - interval + 1)
         
         if args.a == 'qt':
             from agents.tabular_q import Play as AgentPlayer
@@ -179,8 +182,8 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
                 # Champion exists. Play 100 games head-to-head!
                 print(f"Evaluating new model against current champion...")
                 # Instantiate challenger (loading src) and champion (loading dst)
-                challenger = AgentPlayer(args.h, args.v, model_path=src)
-                champion = AgentPlayer(args.h, args.v, model_path=dst)
+                challenger = AgentPlayer(h_dots, v_dots, model_path=src)
+                champion = AgentPlayer(h_dots, v_dots, model_path=dst)
                 
                 challenger_as_p1_wins = 0
                 challenger_as_p1_losses = 0
@@ -208,7 +211,7 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
                         p1, p2 = champion, challenger
                         p1_is_challenger = False
                         
-                    state = gameenv.get_initial_state((args.h, args.v))
+                    state = gameenv.get_initial_state((h_dots, v_dots))
                     turn = 1
                     while not gameenv.is_gameover(state):
                         action = p1.play(state, turn) if turn == 1 else p2.play(state, turn)
@@ -260,12 +263,12 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
 
         # 2. Evaluate the champion (stored in dst or the default agent_player) against Minmax
         eval_path = dst if (dst and os.path.exists(dst)) else None
-        agent_player = AgentPlayer(args.h, args.v, model_path=eval_path)
+        agent_player = AgentPlayer(h_dots, v_dots, model_path=eval_path)
         
         print(f"Playing {args.eval_games} evaluation games (Champion vs Minmax)...")
-        run_eval_games(agent_player, args.a, args.h, args.v, count=args.eval_games, agent=args.a)
+        run_eval_games(agent_player, args.a, h_dots, v_dots, count=args.eval_games, agent=args.a)
         
-        ratings = elo._load_ratings(args.h, args.v, agent=args.a)
+        ratings = elo._load_ratings(h_dots, v_dots, agent=args.a)
         if args.a not in ratings:
             ratings[args.a] = {"rating": 0.0, "epoch_history": {}}
         if "epoch_history" not in ratings[args.a]:
@@ -280,7 +283,7 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
                 ratings["minmax"]["epoch_history"] = {}
             ratings["minmax"]["epoch_history"][str(epochs_so_far)] = ratings["minmax"]["rating"]
             
-        elo._save_ratings(ratings, args.h, args.v, agent=args.a)
+        elo._save_ratings(ratings, h_dots, v_dots, agent=args.a)
         print(f"Epoch {epochs_so_far} - ELO rating of {args.a} (Champion): {current_elo:.2f}")
         
         plt.figure(figsize=(10, 6))
@@ -288,7 +291,7 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
         # Load and plot histories for all learning agents
         for agent_name in ['dqn', 'qt', 'mcts', 'alphazero']:
             try:
-                agent_ratings = elo._load_ratings(args.h, args.v, agent=agent_name)
+                agent_ratings = elo._load_ratings(h_dots, v_dots, agent=agent_name)
                 if agent_name in agent_ratings and "epoch_history" in agent_ratings[agent_name]:
                     hist = agent_ratings[agent_name]["epoch_history"]
                     if not hist:
@@ -311,12 +314,12 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
 
         # Plot fixed benchmark lines
         plt.axhline(y=1000, color='red', linestyle='--', linewidth=2, label='Minmax (0.02s) (Fixed 1000)')
-        if args.h == 3 and args.v == 3:
+        if args.h == 2 and args.v == 2:
             plt.axhline(y=1250, color='black', linestyle=':', linewidth=2, label='Perfect Solver (Fixed 1250)')
         
         plt.xlabel('Training Epochs')
         plt.ylabel('ELO Rating')
-        plt.title(f'Agent ELO Progression ({args.h}x{args.v} board)')
+        plt.title(f'Agent ELO Progression ({args.h}x{args.v} Boxes)')
         plt.grid(True)
         plt.legend()
         os.makedirs("plots", exist_ok=True)
@@ -326,4 +329,4 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
     print(f"\nTraining and ELO evaluation loop complete!")
     print(f"Learning curve saved to plots/elo_learning_curve_{args.h}x{args.v}.png")
 else:
-    trainer.train(args.h, args.v, args.e)
+    trainer.train(h_dots, v_dots, args.e)

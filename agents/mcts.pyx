@@ -180,7 +180,7 @@ class mcts:
 
     def train(self, h, v, epochs, start_epoch=0):
         positions = {}
-        model_path = f"trained_models/mcts{h}x{v}.pkl"
+        model_path = f"trained_models/mcts{h-1}x{v-1}.pkl"
         if os.path.exists(model_path):
             try:
                 with open(model_path, "rb") as f:

@@ -5,14 +5,16 @@ from plots.plot import Plot
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--h", type=int, default=4, help="no. of horizontal dots in game")
-parser.add_argument("--v", type=int, default=4, help="no. of vertical dots in game")
+parser.add_argument("--h", type=int, default=3, help="no. of horizontal boxes in game")
+parser.add_argument("--v", type=int, default=3, help="no. of vertical boxes in game")
 parser.add_argument("--p1", type=str, required=True, choices=["alphazero", "minmax", "mcts", "dqn", "qt", "solver", "self"], help="alphazero,minmax,mcts,dqn,qt,solver,self")
 parser.add_argument("--p2", type=str, required=True, choices=["alphazero", "minmax", "mcts", "dqn", "qt", "solver", "self"], help="alphazero,minmax,mcts,dqn,qt,solver,self")
 parser.add_argument("--g", type=int, default=1, help="Number of games to play")
 parser.add_argument("--t", type=float, default=1.0, help="thinking time limit in seconds")
 
 args = parser.parse_args()
+h_dots = args.h + 1
+v_dots = args.v + 1
 if args.p1 == 'alphazero':
     from agents.alphazero import Play as play1
 elif args.p1 == 'mcts':
@@ -27,7 +29,7 @@ elif args.p1 == 'solver':
     from agents.solver import Play as play1
 
 if not args.p1 == "self":
-    player1 = play1(args.h, args.v)
+    player1 = play1(h_dots, v_dots)
 
 if args.p2 == 'alphazero':
     from agents.alphazero import Play
@@ -43,7 +45,7 @@ elif args.p2 == 'solver':
     from agents.solver import Play
 
 if not args.p2 == "self":
-    player2 = Play(args.h, args.v)
+    player2 = Play(h_dots, v_dots)
 
 plotter = Plot()
 wins = 0
@@ -51,7 +53,7 @@ draws = 0
 loss = 0
 
 for game in range(args.g):
-    state = gameenv.get_initial_state((args.h, args.v))
+    state = gameenv.get_initial_state((h_dots, v_dots))
     turn = 1
     action = None
     
@@ -112,18 +114,18 @@ for game in range(args.g):
         draws += 1
         outcome = 0.5
 
-    elo.log_match(args.p1, args.p2, outcome, args.h, args.v)
+    elo.log_match(args.p1, args.p2, outcome, h_dots, v_dots)
     if args.g <= 5:
-        ratings = elo._load_ratings(args.h, args.v)
+        ratings = elo._load_ratings(h_dots, v_dots)
         p1_elo = ratings.get(args.p1, {}).get("rating", 100.0)
         p2_elo = ratings.get(args.p2, {}).get("rating", 100.0)
         print(f"Updated Ratings - {args.p1}: {p1_elo:.2f}, {args.p2}: {p2_elo:.2f}\n")
 
 print(f"agent1 wins {wins} agent2 wins {loss} draws {draws}")
 if not (args.p1 == "self" or args.p2 == "self"):
-    ratings = elo._load_ratings(args.h, args.v)
+    ratings = elo._load_ratings(h_dots, v_dots)
     p1_elo = ratings.get(args.p1, {}).get("rating", 100.0)
     p2_elo = ratings.get(args.p2, {}).get("rating", 100.0)
     print(f"Final Ratings - {args.p1}: {p1_elo:.2f}, {args.p2}: {p2_elo:.2f}")
-    plotter.plot(args.p1, args.p2, wins, draws, loss, (args.h, args.v))
+    plotter.plot(args.p1, args.p2, wins, draws, loss, (h_dots, v_dots))
     print('plot saved in DotGame/plots/')

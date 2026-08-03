@@ -105,7 +105,7 @@ class dqn:
         model = NN(in_channels, output_dim, H, W).to(device)
         optimizer = optim.Adam(model.parameters(), lr=0.00001)
         
-        model_path = f"trained_models/dqn{h}x{v}.pth"
+        model_path = f"trained_models/dqn{h-1}x{v-1}.pth"
         if os.path.exists(model_path):
             try:
                 model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
@@ -217,8 +217,8 @@ class dqn:
 
         print("training done")
         os.makedirs("trained_models", exist_ok=True)
-        torch.save(model.state_dict(), f"trained_models/dqn{h}x{v}.pth")
-        print(f"model saved at trained_models/dqn{h}x{v}.pth")
+        torch.save(model.state_dict(), f"trained_models/dqn{h-1}x{v-1}.pth")
+        print(f"model saved at trained_models/dqn{h-1}x{v-1}.pth")
 
 class Play:
     """Deep Q-Network player interface for Dots and Boxes."""
@@ -233,9 +233,9 @@ class Play:
         self.model = NN(in_channels, output_dim, H, W).to(self.device)
         try:
             if model_path is None:
-                model_path = f"trained_models/dqn{self.h}x{self.v}_best.pth"
+                model_path = f"trained_models/dqn{self.h-1}x{self.v-1}_best.pth"
                 if not os.path.exists(model_path):
-                    model_path = f"trained_models/dqn{self.h}x{self.v}.pth"
+                    model_path = f"trained_models/dqn{self.h-1}x{self.v-1}.pth"
             self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
         except Exception:
             pass

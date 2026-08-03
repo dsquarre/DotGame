@@ -11,7 +11,7 @@ class qt:
         discount_factor = 0.7
         learning_rate = 0.1
         Q = defaultdict(lambda: defaultdict(float))
-        model_path = f"trained_models/Q{h}x{v}.pkl"
+        model_path = f"trained_models/Q{h-1}x{v-1}.pkl"
         if os.path.exists(model_path):
             try:
                 with open(model_path, "rb") as f:
@@ -70,9 +70,9 @@ class qt:
                 
         os.makedirs("trained_models", exist_ok=True)
         serializable_Q = {s: dict(actions) for s, actions in Q.items()}
-        with open(f"trained_models/Q{h}x{v}.pkl", "wb") as f:
+        with open(f"trained_models/Q{h-1}x{v-1}.pkl", "wb") as f:
             pickle.dump(serializable_Q, f)
-        print(f"training finished, model stored in trained_models/Q{h}x{v}.pkl")
+        print(f"training finished, model stored in trained_models/Q{h-1}x{v-1}.pkl")
 
 class Play:
     """Tabular Q-learning player interface for Dots and Boxes."""
@@ -80,7 +80,7 @@ class Play:
         self.h = h
         self.v = v
         self.Q = defaultdict(lambda: defaultdict(float))
-        model_path = f"trained_models/Q{h}x{v}.pkl"
+        model_path = f"trained_models/Q{h-1}x{v-1}.pkl"
         if os.path.exists(model_path):
             try:
                 with open(model_path, "rb") as f:

@@ -42,6 +42,10 @@ class NN(nn.Module):
         value = self.fc_value(features)
         return policy_logits, value
 
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / (e_x.sum(axis=0) + 1e-8)
+
 class Node:
     """AlphaZero MCTS Node representation."""
     def __init__(self, dots, state, prior=0.0):
@@ -58,38 +62,8 @@ class Node:
             return 0.0
         return self.value_sum / self.visit_count
 
-    def best_child(self, model, c_param=1.4, training=True):
-        H = 2 * self.dots[0] - 1
-        W = 2 * self.dots[1] - 1
-        in_channels = 6
-        
-        device = next(model.parameters()).device
-        state_np = np.array(self.state, dtype=np.float32).reshape(in_channels, H, W)
-        state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
-        
-        if not self.children:
-            actions = gameenv.get_action_space(self.state)
-            with torch.no_grad():
-                logits, _ = model(state_tensor)
-                probs = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
-            
-            policy = np.zeros(H * W)
-            valid_indices = [r * W + c for r, c in actions]
-            sum_prob = sum(probs[idx] for idx in valid_indices) + 1e-8
-            for idx in valid_indices:
-                policy[idx] = probs[idx] / sum_prob
-                
-            if training:
-                alpha = 0.6
-                epsilon = 0.3
-                noise = np.random.dirichlet([alpha] * (H * W))
-                for idx in valid_indices:
-                    policy[idx] = (1 - epsilon) * policy[idx] + epsilon * noise[idx]
-                    
-            for action in actions:
-                idx = action[0] * W + action[1]
-                self.children[action] = Node(self.dots, None, policy[idx])
-
+    def best_child_node_selection(self, c_param=1.4):
+        """Standard UCT action selection based on node child statistics (no neural network call)."""
         best_score = -float('inf')
         best_action = None
         turn = 1 if self.state[0][0][0] > 0 else -1
@@ -104,9 +78,51 @@ class Node:
                 
         return best_action
 
+    def expand_node_children(self, probs, c_param=1.4, training=True):
+        """Expands the current node and sets child priors from the given probability vector."""
+        H = 2 * self.dots[0] - 1
+        W = 2 * self.dots[1] - 1
+        actions = gameenv.get_action_space(self.state)
+        policy = np.zeros(H * W)
+        valid_indices = [r * W + c for r, c in actions]
+        sum_prob = sum(probs[idx] for idx in valid_indices) + 1e-8
+        for idx in valid_indices:
+            policy[idx] = probs[idx] / sum_prob
+            
+        if training:
+            alpha = 0.6
+            epsilon = 0.3
+            noise = np.random.dirichlet([alpha] * (H * W))
+            for idx in valid_indices:
+                policy[idx] = (1 - epsilon) * policy[idx] + epsilon * noise[idx]
+                
+        for action in actions:
+            idx = action[0] * W + action[1]
+            self.children[action] = Node(self.dots, None, policy[idx])
+
+    def best_child(self, model, c_param=1.4, training=True):
+        """Single-state expansion and selection for sequential evaluations."""
+        H = 2 * self.dots[0] - 1
+        W = 2 * self.dots[1] - 1
+        in_channels = 6
+        
+        device = next(model.parameters()).device
+        state_np = np.array(self.state, dtype=np.float32).reshape(in_channels, H, W)
+        state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
+        
+        if not self.children:
+            actions = gameenv.get_action_space(self.state)
+            with torch.no_grad():
+                logits, _ = model(state_tensor)
+                probs = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
+            self.expand_node_children(probs, c_param, training)
+            
+        return self.best_child_node_selection(c_param)
+
 class alphazero:
     """AlphaZero self-play MCTS execution manager."""
     def mcts(self, dots, root, simulations, model, training=True):
+        """Sequential single-state MCTS for evaluations."""
         device = next(model.parameters()).device
         H = 2 * dots[0] - 1
         W = 2 * dots[1] - 1
@@ -116,37 +132,103 @@ class alphazero:
             node = root
             search_path = [node]
             
-            # 1. Selection
             while node.state is not None and node.children:
-                action = node.best_child(model, c_param=1.4, training=training)
+                action = node.best_child_node_selection(c_param=1.4)
                 child = node.children[action]
                 if child.state is None:
                     child.state, _ = gameenv.step(node.state, action)
                 node = child
                 search_path.append(node)
                 
-            # 2. Expansion & Evaluation
             if not gameenv.is_gameover(node.state):
-                # Expand the leaf node by creating its children
-                node.best_child(model, c_param=1.4, training=training)
-                
-                # Evaluate using network value head
-                state_np = np.array(node.state, dtype=np.float32).reshape(in_channels, H, W)
-                state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
-                with torch.no_grad():
-                    _, val = model(state_tensor)
+                if not node.children:
+                    state_np = np.array(node.state, dtype=np.float32).reshape(in_channels, H, W)
+                    state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
+                    with torch.no_grad():
+                        logits, val = model(state_tensor)
+                    probs = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
+                    node.expand_node_children(probs, c_param=1.4, training=training)
                     value = val.item()
+                else:
+                    value = node.value
             else:
                 p1_boxes = np.sum(node.state[3])
                 p2_boxes = np.sum(node.state[4])
                 value = 1.0 if p1_boxes > p2_boxes else (-1.0 if p2_boxes > p1_boxes else 0.0)
                 
-            # 3. Backpropagation
             for p_node in search_path:
                 p_node.visit_count += 1
                 p_node.value_sum += value
                 
         return root
+
+    def batched_mcts(self, dots, roots, simulations, model, training=True):
+        """Parallel batched MCTS running single-batch GPU evaluations across multiple active games."""
+        device = next(model.parameters()).device
+        H = 2 * dots[0] - 1
+        W = 2 * dots[1] - 1
+        in_channels = 6
+        num_games = len(roots)
+        
+        for _ in range(simulations):
+            leaf_nodes = []
+            search_paths = []
+            
+            # 1. Selection (CPU side path traversal)
+            for g in range(num_games):
+                node = roots[g]
+                path = [node]
+                while node.state is not None and node.children:
+                    action = node.best_child_node_selection(c_param=1.4)
+                    child = node.children[action]
+                    if child.state is None:
+                        child.state, _ = gameenv.step(node.state, action)
+                    node = child
+                    path.append(node)
+                leaf_nodes.append(node)
+                search_paths.append(path)
+                
+            # 2. Batch expansion & evaluation on GPU
+            non_terminal_indices = []
+            non_terminal_states = []
+            for g in range(num_games):
+                node = leaf_nodes[g]
+                if not gameenv.is_gameover(node.state):
+                    if not node.children:
+                        non_terminal_indices.append(g)
+                        state_np = np.array(node.state, dtype=np.float32).reshape(in_channels, H, W)
+                        non_terminal_states.append(state_np)
+                        
+            if non_terminal_states:
+                states_tensor = torch.tensor(np.array(non_terminal_states), dtype=torch.float32, device=device)
+                with torch.no_grad():
+                    logits, vals = model(states_tensor)
+                logits = logits.cpu().numpy()
+                vals = vals.cpu().numpy()
+                
+                for idx, g in enumerate(non_terminal_indices):
+                    node = leaf_nodes[g]
+                    probs = softmax(logits[idx])
+                    val = vals[idx][0]
+                    node.expand_node_children(probs, c_param=1.4, training=training)
+                    
+                    # Backpropagate non-terminal leaf evaluation
+                    for p_node in search_paths[g]:
+                        p_node.visit_count += 1
+                        p_node.value_sum += val
+                        
+            # Handle terminal leaf nodes
+            for g in range(num_games):
+                node = leaf_nodes[g]
+                if gameenv.is_gameover(node.state):
+                    p1_boxes = np.sum(node.state[3])
+                    p2_boxes = np.sum(node.state[4])
+                    val = 1.0 if p1_boxes > p2_boxes else (-1.0 if p2_boxes > p1_boxes else 0.0)
+                    
+                    # Backpropagate terminal outcome
+                    for p_node in search_paths[g]:
+                        p_node.visit_count += 1
+                        p_node.value_sum += val
 
 class RecentBuffer:
     """FIFO replay buffer for recent experiences."""
@@ -223,7 +305,7 @@ class az:
         model = NN(in_channels, output_dim, H, W).to(device)
         optimizer = optim.Adam(model.parameters(), lr=0.0004)
         
-        model_path = f"trained_models/alphazero{h}x{v}.pt"
+        model_path = f"trained_models/alphazero{h-1}x{v-1}.pt"
         if os.path.exists(model_path):
             try:
                 checkpoint = torch.load(model_path, map_location=device, weights_only=True)
@@ -243,41 +325,60 @@ class az:
             sims_train = min(100, 10 * L)
             min_transitions = min(5000, 100 * L)
             
-            # Generate 10 self-play games
-            for _ in range(10):
-                state = gameenv.get_initial_state((h, v))
-                root = Node((h, v), state)
-                game_states = []
-                game_policies = []
+            # Generate 10 self-play games in parallel using batched MCTS
+            num_games = 10
+            states = [gameenv.get_initial_state((h, v)) for _ in range(num_games)]
+            roots = [Node((h, v), s) for s in states]
+            
+            game_states = [[] for _ in range(num_games)]
+            game_policies = [[] for _ in range(num_games)]
+            game_finished = [False] * num_games
+            
+            while not all(game_finished):
+                active_indices = [g for g in range(num_games) if not game_finished[g]]
+                active_roots = [roots[g] for g in active_indices]
                 
-                while not gameenv.is_gameover(state):
-                    root = bot.mcts((h, v), root, simulations=sims_train, model=model, training=True)
+                # Run batched MCTS on all active games in parallel (single GPU pass per simulation step)
+                bot.batched_mcts((h, v), active_roots, simulations=sims_train, model=model, training=True)
+                
+                for g in active_indices:
+                    root = roots[g]
+                    state = states[g]
+                    
                     policy = np.zeros(H * W)
                     for action, child in root.children.items():
                         idx = action[0] * W + action[1]
                         policy[idx] = child.visit_count
                     policy = policy / (np.sum(policy) + 1e-8)
                     
-                    game_states.append(state)
-                    game_policies.append(policy)
+                    game_states[g].append(state)
+                    game_policies[g].append(policy)
                     
+                    # Choose best action based on visit counts
                     action = max(root.children.items(), key=lambda item: item[1].visit_count)[0]
                     child = root.children[action]
                     if child.state is None:
                         child.state, _ = gameenv.step(root.state, action)
-                    state = child.state
-                    root = child
+                        
+                    states[g] = child.state
+                    roots[g] = child
                     
-                p1_boxes = np.sum(state[3])
-                p2_boxes = np.sum(state[4])
+                    if gameenv.is_gameover(states[g]):
+                        game_finished[g] = True
+                        
+            # Push transitions to replay buffer once all games finish
+            for g in range(num_games):
+                final_state = states[g]
+                p1_boxes = np.sum(final_state[3])
+                p2_boxes = np.sum(final_state[4])
                 final_val = 1.0 if p1_boxes > p2_boxes else (-1.0 if p2_boxes > p1_boxes else 0.0)
                 
-                for s, p in zip(game_states, game_policies):
-                    v_val = final_val
-                    self.replay_buffer.push(s, p, v_val)
+                for s, p in zip(game_states[g], game_policies[g]):
+                    self.replay_buffer.push(s, p, final_val)
 
-            if len(self.replay_buffer) < min_transitions:
-                print(f"Buffering self-play games... ({len(self.replay_buffer)}/{min_transitions})")
+            required_transitions = max(256, min_transitions)
+            if len(self.replay_buffer) < required_transitions:
+                print(f"Buffering self-play games... ({len(self.replay_buffer)}/{required_transitions})")
                 continue
 
             # Run 2 mini-batch gradient updates per self-play block to speed up learning without overfitting
@@ -338,9 +439,9 @@ class Play:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = NN(in_channels, output_dim, H, W).to(self.device)
         if model_path is None:
-            model_path = f"trained_models/alphazero{h}x{v}_best.pt"
+            model_path = f"trained_models/alphazero{h-1}x{v-1}_best.pt"
             if not os.path.exists(model_path):
-                model_path = f"trained_models/alphazero{h}x{v}.pt"
+                model_path = f"trained_models/alphazero{h-1}x{v-1}.pt"
         if os.path.exists(model_path):
             try:
                 checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
