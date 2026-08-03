@@ -41,12 +41,13 @@ def log_match(player1, player2, outcome, h, v, agent=None, K=32):
 
     for p in [player1, player2]:
         if p not in ratings:
+            initial_rating = 1000.0 if p == 'minmax' else 0.0
             ratings[p] = {
                 "wins": 0,
                 "losses": 0,
                 "draws": 0,
-                "rating": 100.0,
-                "rating_history": [100.0]
+                "rating": initial_rating,
+                "rating_history": [initial_rating]
             }
 
     p1_stats = ratings[player1]
@@ -63,6 +64,11 @@ def log_match(player1, player2, outcome, h, v, agent=None, K=32):
 
     R1_new = R1 + K * (outcome - E1)
     R2_new = R2 + K * ((1.0 - outcome) - E2)
+
+    if player1 == 'minmax':
+        R1_new = 1000.0
+    if player2 == 'minmax':
+        R2_new = 1000.0
 
     p1_stats["rating"] = round(R1_new, 2)
     p2_stats["rating"] = round(R2_new, 2)

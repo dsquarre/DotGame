@@ -9,8 +9,8 @@ def minimax_search(state, depth, alpha, beta, maximizing_player, start_time, tim
         raise TimeoutError()
 
     if depth == 0 or gameenv.is_gameover(state):
-        p1_boxes = np.sum(state[-1][3])
-        p2_boxes = np.sum(state[-1][4])
+        p1_boxes = np.sum(state[3])
+        p2_boxes = np.sum(state[4])
         return p1_boxes - p2_boxes
 
     actions = gameenv.get_action_space(state)
@@ -19,7 +19,7 @@ def minimax_search(state, depth, alpha, beta, maximizing_player, start_time, tim
         max_eval = -float('inf')
         for action in actions:
             next_state, reward = gameenv.step(state, action)
-            next_turn = 1 if next_state[-1][0][0][0] > 0 else -1
+            next_turn = 1 if next_state[0][0][0] > 0 else -1
             eval_val = minimax_search(next_state, depth - 1, alpha, beta, next_turn == 1, start_time, time_limit)
             max_eval = max(max_eval, eval_val)
             alpha = max(alpha, eval_val)
@@ -30,7 +30,7 @@ def minimax_search(state, depth, alpha, beta, maximizing_player, start_time, tim
         min_eval = float('inf')
         for action in actions:
             next_state, reward = gameenv.step(state, action)
-            next_turn = 1 if next_state[-1][0][0][0] > 0 else -1
+            next_turn = 1 if next_state[0][0][0] > 0 else -1
             eval_val = minimax_search(next_state, depth - 1, alpha, beta, next_turn == 1, start_time, time_limit)
             min_eval = min(min_eval, eval_val)
             beta = min(beta, eval_val)
@@ -50,19 +50,19 @@ class Play:
         if not actions:
             return None
 
-        best_action = random.choice(actions)
+        best_actions = [random.choice(actions)]
 
         for depth in range(1, 100):
             try:
                 best_val = -float('inf') if turn == 1 else float('inf')
-                current_best_action = best_action
+                current_best_actions = []
 
                 for action in actions:
                     if time.time() - start_time >= time_limit:
                         raise TimeoutError()
 
                     next_state, reward = gameenv.step(state, action)
-                    next_turn = 1 if next_state[-1][0][0][0] > 0 else -1
+                    next_turn = 1 if next_state[0][0][0] > 0 else -1
 
                     eval_val = minimax_search(
                         next_state,
@@ -77,15 +77,18 @@ class Play:
                     if turn == 1:
                         if eval_val > best_val:
                             best_val = eval_val
-                            current_best_action = action
+                            current_best_actions = [action]
+                        elif eval_val == best_val:
+                            current_best_actions.append(action)
                     else:
                         if eval_val < best_val:
                             best_val = eval_val
-                            current_best_action = action
+                            current_best_actions = [action]
+                        elif eval_val == best_val:
+                            current_best_actions.append(action)
 
-                best_action = current_best_action
-
+                best_actions = current_best_actions
             except TimeoutError:
                 break
 
-        return best_action
+        return random.choice(best_actions)

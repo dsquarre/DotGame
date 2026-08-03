@@ -9,29 +9,28 @@ def _get_hw(dots):
         return 2 * dots - 1, 2 * dots - 1
 
 def array_to_nested_tuple(arr):
-    """Converts a 4D numpy array to a nested tuple representation."""
+    """Converts a 3D numpy array to a nested tuple representation."""
     return tuple(
         tuple(
-            tuple(
-                tuple(row) for row in channel
-            ) for channel in frame
-        ) for frame in arr
+            tuple(row) for row in channel
+        ) for channel in arr
     )
 
-def get_initial_state(dots, history_len=8):
-    """Returns the initial state tuple containing stacked history nested tuples."""
+def get_initial_state(dots):
+    """Returns the initial state tuple of shape (6, H, W)."""
     H, W = _get_hw(dots)
-    stacked = np.zeros((history_len, 5, H, W), dtype=np.float32)
-    stacked[:, 0, :, :] = 1.0
-    return array_to_nested_tuple(stacked)
+    obs = np.zeros((6, H, W), dtype=np.float32)
+    obs[0, :, :] = 1.0  # Turn starts at 1
+    # Channel 5 starts at 0.0 (no bonus move yet)
+    return array_to_nested_tuple(obs)
 
-def get_action_space(state, history_len=8):
+def get_action_space(state):
     """Returns the list of legal coordinate actions (r, c) directly from a state tuple."""
-    H = len(state[0][0])
-    W = len(state[0][0][0])
+    H = len(state[0])
+    W = len(state[0][0])
     actions = []
-    latest_p1 = state[-1][1]
-    latest_p2 = state[-1][2]
+    latest_p1 = state[1]
+    latest_p2 = state[2]
     for r in range(H):
         for c in range(W):
             if (r + c) % 2 == 1:
@@ -39,19 +38,18 @@ def get_action_space(state, history_len=8):
                     actions.append((r, c))
     return actions
 
-def is_gameover(state, history_len=8):
+def is_gameover(state):
     """Returns whether a given state tuple represents a finished game."""
-    return len(get_action_space(state, history_len)) == 0
+    return len(get_action_space(state)) == 0
 
-def step(state, action, history_len=8):
+def step(state, action):
     """
     Pure state transition function: computes the next state and reward given a parent state and action.
     Returns (new_state_tuple, reward).
     """
-    H = len(state[0][0])
-    W = len(state[0][0][0])
-    history_arr = np.array(state, dtype=np.float32)
-    latest_obs = history_arr[-1]
+    H = len(state[0])
+    W = len(state[0][0])
+    latest_obs = np.array(state, dtype=np.float32)
     turn = 1 if latest_obs[0, 0, 0] > 0 else -1
     
     r, c = action
@@ -63,7 +61,6 @@ def step(state, action, history_len=8):
     new_obs[line_channel, r, c] = 1.0
     
     completed_boxes = 0
-    
     if r % 2 == 0:
         adjacent_boxes = []
         if r > 0:
@@ -91,13 +88,12 @@ def step(state, action, history_len=8):
                 
     next_turn = turn if completed_boxes > 0 else -turn
     new_obs[0, :, :] = float(next_turn)
+    # Set the 6th channel to all 1.0 if this is a consecutive/bonus move
+    new_obs[5, :, :] = 1.0 if completed_boxes > 0 else 0.0
     
-    next_history = np.zeros_like(history_arr)
-    next_history[:-1] = history_arr[1:]
-    next_history[-1] = new_obs
-    next_state = array_to_nested_tuple(next_history)
+    next_state = array_to_nested_tuple(new_obs)
     
-    if is_gameover(next_state, history_len):
+    if is_gameover(next_state):
         p1_boxes = np.sum(new_obs[3])
         p2_boxes = np.sum(new_obs[4])
         if p1_boxes > p2_boxes:
@@ -111,11 +107,11 @@ def step(state, action, history_len=8):
         
     return next_state, reward
 
-def render(state, history_len=8):
+def render(state):
     """Renders the board to the console matching the original Env.py layout with rc coordinates."""
-    H = len(state[0][0])
-    W = len(state[0][0][0])
-    latest = state[-1]
+    H = len(state[0])
+    W = len(state[0][0])
+    latest = state
     
     for r in range(H):
         for c in range(W):

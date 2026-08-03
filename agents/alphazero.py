@@ -1,239 +1,227 @@
 import os
-import random
 import math
-import numpy as np
+import random
 import torch
 import torch.nn as nn
+import torch.optim as optim
+import numpy as np
 from collections import deque
 import env.gameenv as gameenv
+import agents.symmetry as symmetry
 
 class NN(nn.Module):
-    """2D Convolutional Neural Network for AlphaZero."""
+    """AlphaZero dual-headed Policy/Value network."""
     def __init__(self, in_channels, output_dim, H, W):
-        super().__init__()
-        self.trunk = nn.Sequential(
+        super(NN, self).__init__()
+        self.H = H
+        self.W = W
+        self.conv = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU()
-        )
-        
-        self.policy_conv = nn.Sequential(
-            nn.Conv2d(128, 2, kernel_size=1),
-            nn.BatchNorm2d(2),
-            nn.ReLU()
-        )
-        self.policy_fc = nn.Linear(2 * H * W, output_dim)
-        
-        self.value_conv = nn.Sequential(
-            nn.Conv2d(128, 1, kernel_size=1),
-            nn.BatchNorm2d(1),
-            nn.ReLU()
-        )
-        self.value_fc = nn.Sequential(
-            nn.Linear(H * W, 64),
             nn.ReLU(),
-            nn.Linear(64, 1),
+        )
+        self.fc_policy = nn.Sequential(
+            nn.Linear(128 * H * W, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_dim)
+        )
+        self.fc_value = nn.Sequential(
+            nn.Linear(128 * H * W, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
             nn.Tanh()
         )
 
     def forward(self, x):
-        shared = self.trunk(x)
-        
-        p_feat = self.policy_conv(shared)
-        p_feat = p_feat.view(p_feat.size(0), -1)
-        policy = self.policy_fc(p_feat)
-        
-        v_feat = self.value_conv(shared)
-        v_feat = v_feat.view(v_feat.size(0), -1)
-        value = self.value_fc(v_feat)
-        
-        return policy, value
+        features = self.conv(x)
+        features = features.view(features.size(0), -1)
+        policy_logits = self.fc_policy(features)
+        value = self.fc_value(features)
+        return policy_logits, value
 
 class Node:
-    """MCTS Node for AlphaZero."""
-    def __init__(self, dots, state, parent=None, action=None):
+    """AlphaZero MCTS Node representation."""
+    def __init__(self, dots, state, prior=0.0):
         self.dots = dots
         self.state = state
-        self.parent = parent
-        self.action = action
+        self.prior = prior
+        self.visit_count = 0
+        self.value_sum = 0.0
         self.children = {}
-        self.N = {}
-        self.total_visits = 0
-        self.W = {}
 
-    def is_expanded(self):
-        return len(self.children) == len(gameenv.get_action_space(self.state))
+    @property
+    def value(self):
+        if self.visit_count == 0:
+            return 0.0
+        return self.value_sum / self.visit_count
 
-    def expand(self):
-        actions = gameenv.get_action_space(self.state)
-        for action in actions:
-            if action not in self.children:
-                new_state, reward = gameenv.step(self.state, action)
-                self.W[action] = 0.0
-                self.N[action] = 0.0
-                child = Node(self.dots, new_state, parent=self, action=action)
-                self.children[action] = child
-
-    def best_child(self, model, c_param=1.2, training=True, show=False):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        h, v = self.dots
-        H = 2 * h - 1
-        W = 2 * v - 1
-        in_channels = 8 * 5
+    def best_child(self, model, c_param=1.4, training=True):
+        H = 2 * self.dots[0] - 1
+        W = 2 * self.dots[1] - 1
+        in_channels = 6
+        
+        device = next(model.parameters()).device
         state_np = np.array(self.state, dtype=np.float32).reshape(in_channels, H, W)
         state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
         
-        with torch.no_grad():
-            pred_policy, _ = model(state_tensor)
-        policy = torch.softmax(pred_policy, dim=1).squeeze(0).cpu().tolist()
-        
-        output_dim = H * W
-        if training:
-            alpha = 0.3
-            epsilon = 0.25
-            noise = np.random.dirichlet([alpha] * output_dim)
-            for i in range(output_dim):
-                policy[i] = (1 - epsilon) * policy[i] + epsilon * noise[i]
+        if not self.children:
+            actions = gameenv.get_action_space(self.state)
+            with torch.no_grad():
+                logits, _ = model(state_tensor)
+                probs = torch.softmax(logits, dim=1).squeeze().cpu().numpy()
+            
+            policy = np.zeros(H * W)
+            valid_indices = [r * W + c for r, c in actions]
+            sum_prob = sum(probs[idx] for idx in valid_indices) + 1e-8
+            for idx in valid_indices:
+                policy[idx] = probs[idx] / sum_prob
                 
-        valid_actions = gameenv.get_action_space(self.state)
-        utility = {}
-        for action in valid_actions:
-            action_idx = action[0] * W + action[1]
-            if action not in self.N:
-                self.N[action] = 0.0
-                self.W[action] = 0.0
-            
-            Q_s_a = self.W[action] / (self.N[action] + 1e-8)
-            U_s_a = c_param * policy[action_idx] * math.sqrt(self.total_visits + 1) / (1 + self.N[action])
-            utility[action] = Q_s_a + U_s_a
-            
-        if show:
-            print(f"U(s,a) : {utility}")
-            
-        turn = 1 if self.state[-1][0][0][0] > 0 else -1
-        if turn == 1:
-            best_utility = max(utility.values())
-        else:
-            best_utility = min(utility.values())
-            
-        best_actions = [a for a, u in utility.items() if u == best_utility]
-        return random.choice(best_actions)
+            if training:
+                alpha = 0.6
+                epsilon = 0.3
+                noise = np.random.dirichlet([alpha] * (H * W))
+                for idx in valid_indices:
+                    policy[idx] = (1 - epsilon) * policy[idx] + epsilon * noise[idx]
+                    
+            for action in actions:
+                idx = action[0] * W + action[1]
+                self.children[action] = Node(self.dots, None, policy[idx])
+
+        best_score = -float('inf')
+        best_action = None
+        turn = 1 if self.state[0][0][0] > 0 else -1
+        
+        for action, child in self.children.items():
+            u = c_param * child.prior * math.sqrt(self.visit_count + 1) / (child.visit_count + 1)
+            q = child.value * turn
+            score = q + u
+            if score > best_score:
+                best_score = score
+                best_action = action
+                
+        return best_action
 
 class alphazero:
+    """AlphaZero self-play MCTS execution manager."""
+    def mcts(self, dots, root, simulations, model, training=True):
+        device = next(model.parameters()).device
+        H = 2 * dots[0] - 1
+        W = 2 * dots[1] - 1
+        in_channels = 6
+        
+        for _ in range(simulations):
+            node = root
+            search_path = [node]
+            
+            # 1. Selection
+            while node.state is not None and node.children:
+                action = node.best_child(model, c_param=1.4, training=training)
+                child = node.children[action]
+                if child.state is None:
+                    child.state, _ = gameenv.step(node.state, action)
+                node = child
+                search_path.append(node)
+                
+            # 2. Expansion & Evaluation
+            if not gameenv.is_gameover(node.state):
+                # Expand the leaf node by creating its children
+                node.best_child(model, c_param=1.4, training=training)
+                
+                # Evaluate using network value head
+                state_np = np.array(node.state, dtype=np.float32).reshape(in_channels, H, W)
+                state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
+                with torch.no_grad():
+                    _, val = model(state_tensor)
+                    value = val.item()
+            else:
+                p1_boxes = np.sum(node.state[3])
+                p2_boxes = np.sum(node.state[4])
+                value = 1.0 if p1_boxes > p2_boxes else (-1.0 if p2_boxes > p1_boxes else 0.0)
+                
+            # 3. Backpropagation
+            for p_node in search_path:
+                p_node.visit_count += 1
+                p_node.value_sum += value
+                
+        return root
+
+class RecentBuffer:
+    """FIFO replay buffer for recent experiences."""
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+
+    def push(self, transition):
+        self.buffer.append(transition)
+
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+
+    def __len__(self):
+        return len(self.buffer)
+
+class HistoricalBuffer:
+    """Diverse long-term replay buffer with random dropout replacement when full."""
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.buffer = []
+
+    def push(self, transition):
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(transition)
+        else:
+            idx = random.randint(0, self.capacity - 1)
+            self.buffer[idx] = transition
+
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+
+    def __len__(self):
+        return len(self.buffer)
+
+class DualReplayMemory:
+    """Manages sampling and updating across recent and historical buffers."""
+    def __init__(self, recent_capacity=10000, historical_capacity=20000, push_history_prob=0.10):
+        self.recent = RecentBuffer(recent_capacity)
+        self.historical = HistoricalBuffer(historical_capacity)
+        self.push_history_prob = push_history_prob
+
+    def push(self, state, policy, value):
+        transition = (state, policy, value)
+        self.recent.push(transition)
+        if random.random() < self.push_history_prob:
+            self.historical.push(transition)
+
+    def sample(self, batch_size):
+        recent_size = batch_size // 2
+        hist_size = batch_size - recent_size
+        
+        if len(self.historical) < hist_size:
+            return self.recent.sample(batch_size)
+            
+        recent_sample = self.recent.sample(recent_size)
+        hist_sample = self.historical.sample(hist_size)
+        return recent_sample + hist_sample
+
+    def __len__(self):
+        return len(self.recent)
+
+class az:
     """AlphaZero training manager."""
     def __init__(self):
-        self.replay_buffer = deque(maxlen=50000)
-        self.completed_games = 0
-
-    def backpropagate(self, node, reward, t=0.5, discount=1.0):
-        while node:
-            if node.parent:
-                node.parent.W[node.action] += reward
-                node.parent.N[node.action] += 1.0
-            
-            h, v = node.dots
-            H = 2 * h - 1
-            W = 2 * v - 1
-            output_dim = H * W
-            
-            policy = [0.0] * output_dim
-            node.total_visits += 1
-            reward *= discount
-            
-            valid_actions = gameenv.get_action_space(node.state)
-            numerator = []
-            for action in valid_actions:
-                action_idx = action[0] * W + action[1]
-                if action not in node.N:
-                    node.N[action] = 0.0
-                    node.W[action] = 0.0
-                
-                if node.N[action] == 0.0:
-                    numerator.append((action_idx, 1.0))
-                else:
-                    numerator.append((action_idx, node.N[action] ** (1.0 / t)))
-                    
-            denominator = sum(val for _, val in numerator)
-            if denominator > 0:
-                for action_idx, val in numerator:
-                    policy[action_idx] = val / denominator
-                    
-            self.replay_buffer.append((node.state, policy, reward))
-            if not node.parent:
-                break
-            node = node.parent
-        return node
-
-    def mcts(self, dots, root, simulations, model, training=True):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        node = root
-        threshold = 1000 if training else 200
-        movecount = 0
-        i = 0
-        while i < simulations:
-            t = 1.0 if movecount < 4 else 0.5
-            while node.children and node.is_expanded():
-                min_visits = 1000.0
-                min_action = None
-                for action in list(node.children.keys()):
-                    child_visits = node.children[action].total_visits
-                    if child_visits < min_visits:
-                        min_visits = child_visits
-                        min_action = action
-                        
-                if min_visits < threshold and min_action is not None:
-                    action = min_action
-                else:
-                    action = node.best_child(model, training=training)
-                    
-                node = node.children[action]
-                movecount += 1
-                if gameenv.is_gameover(node.state):
-                    movecount = 0
-                    break
-                    
-            if gameenv.is_gameover(node.state):
-                p1_boxes = np.sum(node.state[-1][3])
-                p2_boxes = np.sum(node.state[-1][4])
-                value = 1.0 if p1_boxes > p2_boxes else -1.0 if p2_boxes > p1_boxes else 0.0
-                node = self.backpropagate(node, value, t)
-                movecount = 0
-                i += 1
-                self.completed_games += 1
-                continue
-                
-            node.expand()
-            
-            h, v = node.dots
-            H = 2 * h - 1
-            W = 2 * v - 1
-            in_channels = 8 * 5
-            state_np = np.array(node.state, dtype=np.float32).reshape(in_channels, H, W)
-            state_tensor = torch.tensor(state_np, dtype=torch.float32, device=device).unsqueeze(0)
-            
-            with torch.no_grad():
-                _, predicted_value = model(state_tensor)
-            value = predicted_value.item()
-            node = self.backpropagate(node, value, t)
-            i += 1
-        return node
+        self.replay_buffer = DualReplayMemory(recent_capacity=10000, historical_capacity=20000)
 
     def train(self, h, v, epochs, start_epoch=0):
-        dots = (h, v)
-        state = gameenv.get_initial_state(dots)
         H = 2 * h - 1
         W = 2 * v - 1
-        in_channels = 8 * 5
+        in_channels = 6
         output_dim = H * W
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        root = Node(dots, state)
         model = NN(in_channels, output_dim, H, W).to(device)
+        optimizer = optim.Adam(model.parameters(), lr=0.0004)
         
         model_path = f"trained_models/alphazero{h}x{v}.pt"
         if os.path.exists(model_path):
@@ -243,52 +231,94 @@ class alphazero:
                 print(f"Loaded existing AlphaZero model from {model_path} to continue training.")
             except Exception:
                 pass
-                
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        
+
+        bot = alphazero()
+
         for episode in range(epochs):
             global_episode = start_epoch + episode
-            if global_episode < 100:
-                lr = 0.02
-            elif global_episode < 200:
-                lr = 0.002
-            else:
-                lr = 0.0002
-                
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
-                
-            if len(self.replay_buffer) < 5000:
-                while len(self.replay_buffer) < 5000:
-                    root = self.mcts(dots=dots, root=root, simulations=800, model=model)
-            else:
-                self.completed_games = 0
-                while self.completed_games < 5:
-                    root = self.mcts(dots=dots, root=root, simulations=800, model=model)
-                
-            batch = random.sample(self.replay_buffer, k=512)
-            states_batch = np.zeros((512, in_channels, H, W), dtype=np.float32)
-            for idx, (s, _, _) in enumerate(batch):
-                states_batch[idx] = np.array(s, dtype=np.float32).reshape(in_channels, H, W)
-                
-            X = torch.tensor(states_batch, dtype=torch.float32, device=device)
-            Y_policy = torch.tensor([p for (_, p, _) in batch], dtype=torch.float32, device=device)
-            Y_value = torch.tensor([v for (_, _, v) in batch], dtype=torch.float32, device=device)
+            H = 2 * h - 1
+            W = 2 * v - 1
+            in_channels = 6
+            L = 2 * h * v - h - v
+            sims_train = min(100, 10 * L)
+            min_transitions = min(5000, 100 * L)
             
-            model.train()
-            pred_policies, pred_values = model(X)
-            log_policies = torch.log_softmax(pred_policies, dim=1)
-            policy_loss = nn.KLDivLoss(reduction="batchmean")(log_policies, Y_policy)
-            value_loss = nn.MSELoss()(pred_values.squeeze(-1), Y_value)
-            total_loss = policy_loss + value_loss
-            
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+            # Generate 10 self-play games
+            for _ in range(10):
+                state = gameenv.get_initial_state((h, v))
+                root = Node((h, v), state)
+                game_states = []
+                game_policies = []
+                
+                while not gameenv.is_gameover(state):
+                    root = bot.mcts((h, v), root, simulations=sims_train, model=model, training=True)
+                    policy = np.zeros(H * W)
+                    for action, child in root.children.items():
+                        idx = action[0] * W + action[1]
+                        policy[idx] = child.visit_count
+                    policy = policy / (np.sum(policy) + 1e-8)
+                    
+                    game_states.append(state)
+                    game_policies.append(policy)
+                    
+                    action = max(root.children.items(), key=lambda item: item[1].visit_count)[0]
+                    child = root.children[action]
+                    if child.state is None:
+                        child.state, _ = gameenv.step(root.state, action)
+                    state = child.state
+                    root = child
+                    
+                p1_boxes = np.sum(state[3])
+                p2_boxes = np.sum(state[4])
+                final_val = 1.0 if p1_boxes > p2_boxes else (-1.0 if p2_boxes > p1_boxes else 0.0)
+                
+                for s, p in zip(game_states, game_policies):
+                    v_val = final_val
+                    self.replay_buffer.push(s, p, v_val)
+
+            if len(self.replay_buffer) < min_transitions:
+                print(f"Buffering self-play games... ({len(self.replay_buffer)}/{min_transitions})")
+                continue
+
+            # Run 2 mini-batch gradient updates per self-play block to speed up learning without overfitting
+            num_syms = symmetry.get_symmetry_count(h, v)
+            num_updates = 2
+            epoch_loss = 0.0
+            for _ in range(num_updates):
+                batch = self.replay_buffer.sample(256)
+                states_batch = np.zeros((256, in_channels, H, W), dtype=np.float32)
+                policies_batch = np.zeros((256, H * W), dtype=np.float32)
+                for idx, (s, p, _) in enumerate(batch):
+                    s_np = np.array(s, dtype=np.float32).reshape(in_channels, H, W)
+                    p_np = np.array(p, dtype=np.float32).reshape(H, W)
+                    
+                    sym_idx = random.randint(0, num_syms - 1)
+                    s_np, p_np = symmetry.transform_state_and_policy(s_np, p_np, sym_idx)
+                    
+                    states_batch[idx] = s_np
+                    policies_batch[idx] = p_np.flatten()
+                    
+                X = torch.tensor(states_batch, dtype=torch.float32, device=device)
+                Y_policy = torch.tensor(policies_batch, dtype=torch.float32, device=device)
+                Y_value = torch.tensor([v for (_, _, v) in batch], dtype=torch.float32, device=device)
+                
+                model.train()
+                pred_policies, pred_values = model(X)
+                log_policies = torch.log_softmax(pred_policies, dim=1)
+                policy_loss = nn.KLDivLoss(reduction="batchmean")(log_policies, Y_policy)
+                value_loss = nn.MSELoss()(pred_values.squeeze(-1), Y_value)
+                total_loss = policy_loss + value_loss
+                
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+                epoch_loss += total_loss.item()
+                
+            epoch_loss = epoch_loss / num_updates
             
             print_interval = max(1, epochs // 10)
             if (episode + 1) % print_interval == 0:
-                print(f"Episode {global_episode + 1}: Loss = {total_loss.item():.4f}")
+                print(f"Episode {global_episode + 1}: Loss = {epoch_loss:.4f}")
                 
         os.makedirs("trained_models", exist_ok=True)
         torch.save({
@@ -298,29 +328,48 @@ class alphazero:
 
 class Play:
     """AlphaZero player interface for Dots and Boxes."""
-    def __init__(self, h, v):
+    def __init__(self, h, v, model_path=None):
         self.h = h
         self.v = v
         H = 2 * h - 1
         W = 2 * v - 1
-        in_channels = 8 * 5
+        in_channels = 6
         output_dim = H * W
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = NN(in_channels, output_dim, H, W).to(self.device)
-        model_path = f"trained_models/alphazero{h}x{v}.pt"
+        if model_path is None:
+            model_path = f"trained_models/alphazero{h}x{v}_best.pt"
+            if not os.path.exists(model_path):
+                model_path = f"trained_models/alphazero{h}x{v}.pt"
         if os.path.exists(model_path):
             try:
                 checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
                 self.model.load_state_dict(checkpoint['model_state_dict'])
             except Exception:
                 pass
-        self.model.eval()
 
     def play(self, state, turn, time_limit=1.0):
         root = Node((self.h, self.v), state)
         bot = alphazero()
-        # Run MCTS simulations guided by the neural network
-        root = bot.mcts((self.h, self.v), root, simulations=800, model=self.model, training=False)
-        # Select best move greedily based on Q-values
-        action = root.best_child(self.model, c_param=False, training=False)
+        
+        # 1. Expand the root first to initialize children and their prior probabilities
+        root.best_child(self.model, c_param=1.4, training=False)
+        
+        # 2. Add Dirichlet noise ONLY to the root's children to diversify search
+        H = 2 * self.h - 1
+        W = 2 * self.v - 1
+        alpha = 0.6
+        epsilon = 0.25  # 25% exploration noise
+        noise = np.random.dirichlet([alpha] * (H * W))
+        for action, child in root.children.items():
+            idx = action[0] * W + action[1]
+            child.prior = (1 - epsilon) * child.prior + epsilon * noise[idx]
+            
+        # 3. Run MCTS simulations from the perturbed root
+        L = 2 * self.h * self.v - self.h - self.v
+        sims_play = min(150, 10 * L)
+        root = bot.mcts((self.h, self.v), root, simulations=sims_play, model=self.model, training=False)
+        
+        # 4. Deterministic selection of the best move
+        action = max(root.children.items(), key=lambda item: item[1].visit_count)[0]
         return action
