@@ -283,35 +283,47 @@ if args.a in ['qt', 'dqn', 'mcts', 'alphazero']:
         elo._save_ratings(ratings, args.h, args.v, agent=args.a)
         print(f"Epoch {epochs_so_far} - ELO rating of {args.a} (Champion): {current_elo:.2f}")
         
-        ratings = elo._load_ratings(args.h, args.v, agent=args.a)
         plt.figure(figsize=(10, 6))
-        for agent_name in ['dqn', 'qt', 'mcts', 'alphazero', 'minmax']:
-            if agent_name in ratings and "epoch_history" in ratings[agent_name]:
-                hist = ratings[agent_name]["epoch_history"]
-                sorted_keys = sorted([int(k) for k in hist.keys()])
-                sorted_vals = [hist[str(k)] for k in sorted_keys]
-                if agent_name == 'dqn':
-                    label, color = 'DQN (2D CNN)', 'blue'
-                elif agent_name == 'qt':
-                    label, color = 'Tabular Q', 'green'
-                elif agent_name == 'mcts':
-                    label, color = 'MCTS', 'purple'
-                elif agent_name == 'alphazero':
-                    label, color = 'AlphaZero', 'orange'
-                else:
-                    label, color = 'Minmax Benchmark', 'red'
-                plt.plot(sorted_keys, sorted_vals, marker='o', label=label, color=color)
-                
+        
+        # Load and plot histories for all learning agents
+        for agent_name in ['dqn', 'qt', 'mcts', 'alphazero']:
+            try:
+                agent_ratings = elo._load_ratings(args.h, args.v, agent=agent_name)
+                if agent_name in agent_ratings and "epoch_history" in agent_ratings[agent_name]:
+                    hist = agent_ratings[agent_name]["epoch_history"]
+                    if not hist:
+                        continue
+                    sorted_keys = sorted([int(k) for k in hist.keys()])
+                    sorted_vals = [hist[str(k)] for k in sorted_keys]
+                    
+                    if agent_name == 'dqn':
+                        label, color = 'DQN (2D CNN)', 'blue'
+                    elif agent_name == 'qt':
+                        label, color = 'Tabular Q', 'green'
+                    elif agent_name == 'mcts':
+                        label, color = 'MCTS', 'purple'
+                    elif agent_name == 'alphazero':
+                        label, color = 'AlphaZero', 'orange'
+                        
+                    plt.plot(sorted_keys, sorted_vals, marker='o', label=label, color=color)
+            except Exception:
+                pass
+
+        # Plot fixed benchmark lines
+        plt.axhline(y=1000, color='red', linestyle='--', linewidth=2, label='Minmax Benchmark (Fixed 1000)')
+        if args.h == 3 and args.v == 3:
+            plt.axhline(y=1250, color='black', linestyle=':', linewidth=2, label='Perfect Solver (Fixed 1250)')
+        
         plt.xlabel('Training Epochs')
         plt.ylabel('ELO Rating')
         plt.title(f'Agent ELO Progression ({args.h}x{args.v} board)')
         plt.grid(True)
         plt.legend()
         os.makedirs("plots", exist_ok=True)
-        plt.savefig(f"plots/elo_learning_curve_{args.h}x{args.v}_{args.a}.png")
+        plt.savefig(f"plots/elo_learning_curve_{args.h}x{args.v}.png")
         plt.close()
         
     print(f"\nTraining and ELO evaluation loop complete!")
-    print(f"Learning curve saved to plots/elo_learning_curve_{args.h}x{args.v}_{args.a}.png")
+    print(f"Learning curve saved to plots/elo_learning_curve_{args.h}x{args.v}.png")
 else:
     trainer.train(args.h, args.v, args.e)

@@ -8,16 +8,17 @@ Creating a popular game we play on paper and creating agents to play it perfectl
 ---
 
 
-## 🧠 Agents Implemented
+## Agents Implemented
 
 Agents are modular and located in `agents/`:
 - **Tabular Q-Learning** (`tabular_q.py`)
 - **Deep Q-Network (DQN)** (`dqn.py`)
 - **Minimax** (`minmax.py`)
 - **Monte Carlo Tree Search (MCTS)** (`mcts.py`)
-- **AlphaZero-style Agent** (`alphazero.py`)  
+- **AlphaZero-style Agent** (`alphazero.py`)
   Uses MCTS guided by policy/value neural networks.
 
+![](plots/elo_learning_curve_3x3.png)
 
 ---
 
@@ -32,7 +33,7 @@ DotGame/<br/>
 ├── plots/ #Plots saved here after play<br/>
 ├── train.py #Main training entry point<br/>
 ├── play.py #Main evaluation entry point<br/>
-├── requirements.txt #Libraries used<br/> 
+├── requirements.txt #Libraries used<br/>
 └── README.md #This file<br/>
 
 
@@ -46,7 +47,7 @@ DotGame/<br/>
 pip install -r requirements.txt
 ```
 
-### Train an agent 
+### Train an agent
 
 ```bash
 python3 -m train --dots 3 --agent mcts --epochs 400000
@@ -73,4 +74,3 @@ Legacy: legacy/dotgame.c
 gcc dotgame.c
 ./a.out
 ```
-

@@ -18,7 +18,7 @@ class Plot:
 
         # Labeling
         ax.set_ylabel('Number of Games')
-        ax.set_title(f'{dots}x{dots} {player1} vs {player2}')
+        ax.set_title(f'{dots[0]}x{dots[1]} {player1} vs {player2}')
         ax.set_xlabel('')
         ax.legend()
 
@@ -36,5 +36,5 @@ class Plot:
         autolabel(rects3)
 
         plt.tight_layout()
-        plt.savefig(f"plots/{dots}x{dots}{player1}vs{player2}.png")
+        plt.savefig(f"plots/{dots[0]}x{dots[1]}_{player1}vs{player2}.png")
         plt.show()
