@@ -25,7 +25,7 @@ class qt:
         
         for episode in range(epochs + 1):
             state = gameenv.get_initial_state((h, v))
-            turn = 1 if state[-1][0][0][0] > 0 else -1
+            turn = 1 if state[0][0][0] > 0 else -1
             
             while not gameenv.is_gameover(state):
                 valid_actions = gameenv.get_action_space(state)
@@ -52,7 +52,7 @@ class qt:
                     valid_actions_next = gameenv.get_action_space(next_state)
                     valid_q_values_next = [Q[next_state][a] for a in valid_actions_next]
                     
-                    next_turn = 1 if next_state[-1][0][0][0] > 0 else -1
+                    next_turn = 1 if next_state[0][0][0] > 0 else -1
                     
                     if next_turn == 1:
                         best_q_next = np.max(valid_q_values_next)
@@ -79,22 +79,32 @@ class Play:
     def __init__(self, h, v):
         self.h = h
         self.v = v
-        self.Q = {}
-        try:
-            with open(f"trained_models/Q{h}x{v}.pkl", "rb") as f:
-                self.Q = pickle.load(f)
-        except Exception:
-            pass
+        self.Q = defaultdict(lambda: defaultdict(float))
+        model_path = f"trained_models/Q{h}x{v}.pkl"
+        if os.path.exists(model_path):
+            try:
+                with open(model_path, "rb") as f:
+                    loaded = pickle.load(f)
+                    for s, actions in loaded.items():
+                        for a, val in actions.items():
+                            self.Q[s][a] = val
+            except Exception:
+                pass
 
     def play(self, state, turn, secs=0):
         actions = gameenv.get_action_space(state)
-        if not self.Q:
-            return random.choice(actions)
-            
-        state_q = self.Q.get(state, {})
-        valid_q_values = [state_q.get(a, 0.0) for a in actions]
+        if not actions:
+            return None
+        valid_q_values = np.array([self.Q[state][a] for a in actions], dtype=np.float32)
         
+        import random
+        cdef float best_q = np.max(valid_q_values) if turn == 1 else np.min(valid_q_values)
+        
+        # Select all actions within a safe 0.1 threshold of the best action
         if turn == 1:
-            return actions[np.argmax(valid_q_values)]
+            safe_indices = [i for i, q in enumerate(valid_q_values) if q >= best_q - 0.1]
         else:
-            return actions[np.argmin(valid_q_values)]
+            safe_indices = [i for i, q in enumerate(valid_q_values) if q <= best_q + 0.1]
+            
+        best_idx = random.choice(safe_indices)
+        return actions[best_idx]

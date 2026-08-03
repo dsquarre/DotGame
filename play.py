@@ -7,35 +7,41 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--h", type=int, default=4, help="no. of horizontal dots in game")
 parser.add_argument("--v", type=int, default=4, help="no. of vertical dots in game")
-parser.add_argument("--p1", type=str, required=True, help="alphazero,minmax,mcts,dqn,qt,self")
-parser.add_argument("--p2", type=str, required=True, help="alphazero,minmax,mcts,dqn,qt,self")
+parser.add_argument("--p1", type=str, required=True, choices=["alphazero", "minmax", "mcts", "dqn", "qt", "solver", "self"], help="alphazero,minmax,mcts,dqn,qt,solver,self")
+parser.add_argument("--p2", type=str, required=True, choices=["alphazero", "minmax", "mcts", "dqn", "qt", "solver", "self"], help="alphazero,minmax,mcts,dqn,qt,solver,self")
 parser.add_argument("--g", type=int, default=1, help="Number of games to play")
 parser.add_argument("--t", type=float, default=1.0, help="thinking time limit in seconds")
 
 args = parser.parse_args()
 if args.p1 == 'alphazero':
     from agents.alphazero import Play as play1
-if args.p1 == 'mcts':
+elif args.p1 == 'mcts':
     from agents.mcts import Play as play1
-if args.p1 == 'dqn':
+elif args.p1 == 'dqn':
     from agents.dqn import Play as play1
-if args.p1 == 'qt':
+elif args.p1 == 'qt':
     from agents.tabular_q import Play as play1
-if args.p1 == 'minmax':
+elif args.p1 == 'minmax':
     from agents.minmax import Play as play1
+elif args.p1 == 'solver':
+    from agents.solver import Play as play1
+
 if not args.p1 == "self":
     player1 = play1(args.h, args.v)
 
 if args.p2 == 'alphazero':
     from agents.alphazero import Play
-if args.p2 == 'mcts':
+elif args.p2 == 'mcts':
     from agents.mcts import Play
-if args.p2 == 'dqn':
+elif args.p2 == 'dqn':
     from agents.dqn import Play
-if args.p2 == 'qt':
+elif args.p2 == 'qt':
     from agents.tabular_q import Play
-if args.p2 == 'minmax':
+elif args.p2 == 'minmax':
     from agents.minmax import Play
+elif args.p2 == 'solver':
+    from agents.solver import Play
+
 if not args.p2 == "self":
     player2 = Play(args.h, args.v)
 
@@ -85,15 +91,15 @@ for game in range(args.g):
 
         state, reward = gameenv.step(state, action)
         
-        # Extract turn for the next step from state Channel 0 of the latest frame
-        turn = 1 if state[-1][0][0][0] > 0 else -1
+        # Extract turn for the next step from state Channel 0
+        turn = 1 if state[0][0][0] > 0 else -1
 
     if args.g < 3 or args.p1 == "self" or args.p2 == "self":
         gameenv.render(state)
 
     # Calculate final box difference from final state
-    p1_boxes = np.sum(state[-1][3])
-    p2_boxes = np.sum(state[-1][4])
+    p1_boxes = np.sum(state[3])
+    p2_boxes = np.sum(state[4])
     value = p1_boxes - p2_boxes
     
     if value > 0:
@@ -107,12 +113,17 @@ for game in range(args.g):
         outcome = 0.5
 
     elo.log_match(args.p1, args.p2, outcome, args.h, args.v)
-    ratings = elo._load_ratings(args.h, args.v)
-    p1_elo = ratings.get(args.p1, {}).get("rating", 100.0)
-    p2_elo = ratings.get(args.p2, {}).get("rating", 100.0)
-    print(f"Updated Ratings - {args.p1}: {p1_elo:.2f}, {args.p2}: {p2_elo:.2f}\n")
+    if args.g <= 5:
+        ratings = elo._load_ratings(args.h, args.v)
+        p1_elo = ratings.get(args.p1, {}).get("rating", 100.0)
+        p2_elo = ratings.get(args.p2, {}).get("rating", 100.0)
+        print(f"Updated Ratings - {args.p1}: {p1_elo:.2f}, {args.p2}: {p2_elo:.2f}\n")
 
 print(f"agent1 wins {wins} agent2 wins {loss} draws {draws}")
 if not (args.p1 == "self" or args.p2 == "self"):
+    ratings = elo._load_ratings(args.h, args.v)
+    p1_elo = ratings.get(args.p1, {}).get("rating", 100.0)
+    p2_elo = ratings.get(args.p2, {}).get("rating", 100.0)
+    print(f"Final Ratings - {args.p1}: {p1_elo:.2f}, {args.p2}: {p2_elo:.2f}")
     plotter.plot(args.p1, args.p2, wins, draws, loss, (args.h, args.v))
     print('plot saved in DotGame/plots/')
