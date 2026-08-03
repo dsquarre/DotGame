@@ -8,3 +8,5 @@ __pycache__
 *.c
 *.so
 build/
+.agents/AGENTS.md
+trained_models/mcts3x3.pkl
