@@ -1,22 +1,20 @@
-# DotGame (Dots and Boxes)
+# DotGame: Reinforcement Learning Agents for Dots & Boxes
 
-Creating a popular game we play on paper and creating agents to play it perfectly.
+Implemented deep reinforcement learning architectures to solve the combinatorial space of Dots and Boxes. 
+
+## 🤖 Implemented Decision Agents
+The codebase exposes highly modular training backends (`/agents`) to pit classic search frameworks against deep policy networks:
+* **`alphazero.py` (AlphaZero-style):** Deep neural network architecture combining Convolutional policy/value evaluation heads inside a generalized Monte Carlo Tree Search (MCTS) rollout loop.
+* **`mcts.py` (Pure MCTS):** Stochastic heuristic rollouts balancing exploration/exploitation metrics across raw board spaces.
+* **`minmax.py` (Classical Minimax):** Exhaustive tree lookups serving as an exact deterministic performance baseline on low-dimensional boards ($2\times2$ to $5\times5$).
+* **`dqn.py` (Deep Q-Networks):** Continuous state space values mapping action selections through custom deep multi-layer neural architectures.
+* **`tabular_q.py` (Tabular Q-Learning):** Discrete mapping for tracking small, bounded sub-states.
+
 
 ![](dotgame.png)
 
 
 ---
-
-
-## Agents Implemented
-
-Agents are modular and located in `agents/`:
-- **Tabular Q-Learning** (`tabular_q.py`)
-- **Deep Q-Network (DQN)** (`dqn.py`)
-- **Minimax** (`minmax.py`)
-- **Monte Carlo Tree Search (MCTS)** (`mcts.py`)
-- **AlphaZero-style Agent** (`alphazero.py`)
-  Uses MCTS guided by policy/value neural networks.
 
 ![](plots/elo_learning_curve_3x3.png)
 
